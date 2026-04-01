@@ -98,10 +98,17 @@ async function doLogin() {
     localStorage.setItem('cc_role',  data.role);
     localStorage.setItem('cc_user',  JSON.stringify({ name: data.name, username: data.username, role: data.role }));
     currentPage = data.role === 'teacher' ? 'results' : 'dashboard';
-    await DB.init();
+    try {
+      await DB.init();
+    } catch(initErr) {
+      console.error('DB.init failed:', initErr);
+      errEl.textContent = 'Connected but failed to load data: ' + initErr.message;
+      return;
+    }
     render();
   } catch(e) {
-    errEl.textContent = 'Server error — please try again';
+    console.error('Login error:', e);
+    errEl.textContent = 'Server error: ' + e.message;
   }
 }
 
