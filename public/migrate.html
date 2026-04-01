@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Criterion College — Data Migration</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 700px; margin: 60px auto; padding: 0 20px; background: #f0fdf4; }
+  h1 { color: #1a6e3c; }
+  .card { background: white; border-radius: 12px; padding: 28px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 20px; }
+  textarea { width: 100%; height: 200px; font-family: monospace; font-size: 12px; border: 1px solid #ccc; border-radius: 8px; padding: 10px; box-sizing: border-box; }
+  input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 8px; margin-bottom: 12px; box-sizing: border-box; font-size: 14px; }
+  button { background: #55A845; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  button:hover { background: #1a6e3c; }
+  .result { margin-top: 16px; padding: 14px; border-radius: 8px; font-size: 14px; display: none; }
+  .success { background: #e8f5e9; color: #1a6e3c; border: 1px solid #a5d6a7; }
+  .error   { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
+  ol { padding-left: 20px; line-height: 2; }
+  code { background: #f0fdf4; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #1a6e3c; }
+</style>
+</head>
+<body>
+<h1>🏫 Criterion College — Data Migration</h1>
+<p style="color:#555;">One-time tool to import your existing localStorage data into the server database.</p>
+
+<div class="card">
+  <h3>Step 1 — Export from your old static site</h3>
+  <ol>
+    <li>Open your old static site in Chrome/Firefox</li>
+    <li>Press <strong>F12</strong> to open DevTools</li>
+    <li>Go to the <strong>Console</strong> tab</li>
+    <li>Paste this command and press Enter:</li>
+  </ol>
+  <textarea readonly onclick="this.select()" style="height:80px;">JSON.stringify({students:JSON.parse(localStorage.getItem('cc_students')||'[]'),results:JSON.parse(localStorage.getItem('cc_results')||'[]'),settings:JSON.parse(localStorage.getItem('cc_settings')||'{}')})</textarea>
+  <p style="color:#555;font-size:13px;margin-top:8px;">Copy the entire output (it will be a long JSON string starting with <code>{"students":</code>)</p>
+</div>
+
+<div class="card">
+  <h3>Step 2 — Login as Admin</h3>
+  <input id="username" type="text" placeholder="Admin username" value="admin" />
+  <input id="password" type="password" placeholder="Admin password" />
+</div>
+
+<div class="card">
+  <h3>Step 3 — Paste & Migrate</h3>
+  <textarea id="data-input" placeholder='Paste the JSON output here, e.g. {"students":[...],"results":[...],"settings":{...}}'></textarea>
+  <br/><br/>
+  <button onclick="runMigration()">🚀 Migrate Data</button>
+  <div id="result" class="result"></div>
+</div>
+
+<script>
+async function runMigration() {
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value;
+  const raw      = document.getElementById('data-input').value.trim();
+  const resultEl = document.getElementById('result');
+  resultEl.style.display = 'none';
+
+  if (!username || !password) { showResult('error', 'Enter admin username and password'); return; }
+  if (!raw) { showResult('error', 'Paste your localStorage data first'); return; }
+
+  let data;
+  try {
+    // Handle both raw JSON and JSON.stringify output (with surrounding quotes)
+    const cleaned = raw.startsWith('"') ? JSON.parse(raw) : raw;
+    data = typeof cleaned === 'string' ? JSON.parse(cleaned) : cleaned;
+  } catch(e) {
+    showResult('error', 'Invalid JSON — make sure you copied the full output from the console: ' + e.message);
+    return;
+  }
+
+  // Login first
+  showResult('success', '🔐 Logging in...');
+  let token;
+  try {
+    const loginRes = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const loginData = await loginRes.json();
+    if (!loginRes.ok) { showResult('error', 'Login failed: ' + loginData.error); return; }
+    token = loginData.token;
+  } catch(e) {
+    showResult('error', 'Login error: ' + e.message);
+    return;
+  }
+
+  showResult('success', '⏳ Migrating data...');
+  try {
+    const res = await fetch('/api/migrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        students: data.students || [],
+        results:  data.results  || [],
+        settings: data.settings || {}
+      })
+    });
+    const result = await res.json();
+    if (!res.ok) { showResult('error', 'Migration failed: ' + result.error); return; }
+    showResult('success',
+      `✅ Migration complete!<br/><br/>` +
+      `<strong>${result.students}</strong> students imported<br/>` +
+      `<strong>${result.results}</strong> results imported<br/><br/>` +
+      `<a href="/" style="color:#1a6e3c;font-weight:700;">→ Go to the app</a>`
+    );
+  } catch(e) {
+    showResult('error', 'Migration error: ' + e.message);
+  }
+}
+
+function showResult(type, msg) {
+  const el = document.getElementById('result');
+  el.className = 'result ' + type;
+  el.innerHTML = msg;
+  el.style.display = 'block';
+}
+</script>
+</body>
+</html>
