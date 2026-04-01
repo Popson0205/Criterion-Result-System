@@ -1,11 +1,7 @@
 // ============================================================
 // CRITERION COLLEGE — DATA STORE (localStorage-backed)
 // ============================================================
-const DB = {
-  get(key, def = null) {
-    try { const v = localStorage.getItem('cc_' + key); return v ? JSON.parse(v) : def; } catch { return def; }
-  },
-  set(key, val) {
+key, val) {
     try { localStorage.setItem('cc_' + key, JSON.stringify(val)); } catch {}
   },
   // Students: { id, name, classId, passport(base64), daysAttended, session, term }
