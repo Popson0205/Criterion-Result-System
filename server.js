@@ -146,9 +146,10 @@ app.get('/api/share/:token', async (req, res) => {
   try {
     const share = await ShareTokens.get(req.params.token);
     if (!share) return res.status(404).json({ error: 'Invalid or expired link' });
-    const student = await Students.get(share.studentId);
-    const result  = await Results.get(share.studentId, share.session, share.term);
-    res.json({ student, result });
+    const student  = await Students.get(share.studentId);
+    const result   = await Results.get(share.studentId, share.session, share.term);
+    const settings = await Settings.get();
+    res.json({ student, result, settings });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
