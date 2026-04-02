@@ -16,6 +16,7 @@
   .error   { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
   ol { padding-left: 20px; line-height: 2; }
   code { background: #f0fdf4; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #1a6e3c; }
+  .note { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #92400e; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -30,8 +31,12 @@
     <li>Go to the <strong>Console</strong> tab</li>
     <li>Paste this command and press Enter:</li>
   </ol>
-  <textarea readonly onclick="this.select()" style="height:80px;">JSON.stringify({students:JSON.parse(localStorage.getItem('cc_students')||'[]'),results:JSON.parse(localStorage.getItem('cc_results')||'[]'),settings:JSON.parse(localStorage.getItem('cc_settings')||'{}')})</textarea>
-  <p style="color:#555;font-size:13px;margin-top:8px;">Copy the entire output (it will be a long JSON string starting with <code>{"students":</code>)</p>
+  <textarea readonly onclick="this.select()" style="height:60px;">btoa(unescape(encodeURIComponent(JSON.stringify({students:JSON.parse(localStorage.getItem('cc_students')||'[]'),results:JSON.parse(localStorage.getItem('cc_results')||'[]'),settings:JSON.parse(localStorage.getItem('cc_settings')||'{}')}))))</textarea>
+  <p style="color:#555;font-size:13px;margin-top:8px;">Copy the entire output — it will be a long string of random letters and numbers.</p>
+  <div class="note">
+    ⚠️ <strong>If the above gives an error</strong>, try the original command instead:<br/><br/>
+    <code>JSON.stringify({students:JSON.parse(localStorage.getItem('cc_students')||'[]'),results:JSON.parse(localStorage.getItem('cc_results')||'[]'),settings:JSON.parse(localStorage.getItem('cc_settings')||'{}')})</code>
+  </div>
 </div>
 
 <div class="card">
@@ -42,7 +47,7 @@
 
 <div class="card">
   <h3>Step 3 — Paste & Migrate</h3>
-  <textarea id="data-input" placeholder='Paste the JSON output here, e.g. {"students":[...],"results":[...],"settings":{...}}'></textarea>
+  <textarea id="data-input" placeholder="Paste the output from the console here..."></textarea>
   <br/><br/>
   <button onclick="runMigration()">🚀 Migrate Data</button>
   <div id="result" class="result"></div>
@@ -61,12 +66,33 @@ async function runMigration() {
 
   let data;
   try {
-    // Handle both raw JSON and JSON.stringify output (with surrounding quotes)
-    const cleaned = raw.startsWith('"') ? JSON.parse(raw) : raw;
+    let cleaned = raw.trim();
+
+    // Handle base64 encoded input (from btoa() command)
+    if (/^[A-Za-z0-9+/=]+$/.test(cleaned) && cleaned.length > 20) {
+      try {
+        const decoded = decodeURIComponent(escape(atob(cleaned)));
+        // Only use decoded if it looks like JSON
+        if (decoded.trim().startsWith('{')) {
+          cleaned = decoded;
+        }
+      } catch(b64err) { /* not base64, continue */ }
+    }
+
+    // Remove surrounding quotes if present (from console JSON.stringify output)
+    if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+      cleaned = JSON.parse(cleaned);
+    }
+
     data = typeof cleaned === 'string' ? JSON.parse(cleaned) : cleaned;
   } catch(e) {
-    showResult('error', 'Invalid JSON — make sure you copied the full output from the console: ' + e.message);
-    return;
+    // Last resort: Function eval
+    try {
+      data = Function('"use strict"; return (' + raw + ')')();
+    } catch(e2) {
+      showResult('error', 'Could not parse the data. Make sure you copied the full output from the console.<br/><br/>Error: ' + e.message);
+      return;
+    }
   }
 
   // Login first
