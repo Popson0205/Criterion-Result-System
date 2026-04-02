@@ -504,7 +504,7 @@ function renderResults() {
               <div style="display:flex;gap:6px;">
                 <button class="btn btn-${r?'secondary':'primary'} btn-sm" onclick="editStudentId='${s.id}';navigate('enter_result');">${r?'Edit':'Enter'}</button>
                 ${r ? `<button class="btn btn-ghost btn-sm" onclick="previewStudentId='${s.id}';navigate('preview_result');">Preview</button>
-                       <button class="btn btn-ghost btn-sm" onclick="shareResult('${s.id}')">🔗 Share</button>
+                       ${isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="shareResult('${s.id}')">🔗 Share</button>` : ''}
                        ${isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="printResult('${s.id}')">🖨️ Print</button>` : ''}` : ''}
               </div>
             </td>
@@ -670,7 +670,7 @@ function renderPreviewResult() {
     <h1 class="page-title">Result Preview — ${student.name}</h1>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-ghost" onclick="navigate('results')">← Back</button>
-      <button class="btn btn-secondary" onclick="shareResult('${student.id}')">🔗 Share Link</button>
+      ${isAdmin() ? `<button class="btn btn-secondary" onclick="shareResult('${student.id}')">🔗 Share Link</button>` : ''}
       ${isAdmin() ? `<button class="btn btn-primary" onclick="printResult('${student.id}')">🖨️ Print</button>` : ''}
     </div>
   </div>
@@ -907,15 +907,16 @@ async function shareResult(studentId) {
   navigator.clipboard.writeText(url).catch(()=>{});
   // Show modal
   const modal = document.createElement('div');
+  modal.id = 'share-modal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;';
   modal.innerHTML = `
-    <div style="background:var(--surface-primary);border-radius:12px;padding:24px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+    <div style="background:#fff;border-radius:12px;padding:24px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
       <h3 style="margin-bottom:8px;color:#55A845;">🔗 Shareable Link Created</h3>
-      <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Share this link with board members or parents. Anyone with this link can view the result.</p>
-      <div style="background:var(--surface-secondary);border-radius:8px;padding:10px 12px;font-size:12px;word-break:break-all;margin-bottom:16px;border:1px solid var(--border-default);">${url}</div>
+      <p style="font-size:13px;color:#555;margin-bottom:12px;">Share this link with board members or parents. Anyone with this link can view the result.</p>
+      <div style="background:#f5f5f5;border-radius:8px;padding:10px 12px;font-size:12px;word-break:break-all;margin-bottom:16px;border:1px solid #ddd;color:#111;">${url}</div>
       <div style="display:flex;gap:8px;">
-        <button class="btn btn-primary" onclick="navigator.clipboard.writeText('${url}');this.textContent='✓ Copied!';">📋 Copy Link</button>
-        <button class="btn btn-ghost" onclick="this.closest('div[style]').remove()">Close</button>
+        <button class="btn btn-primary" onclick="navigator.clipboard.writeText('${url}');this.textContent='✓ Copied!';setTimeout(()=>document.getElementById('share-modal').remove(),800);">📋 Copy Link</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('share-modal').remove()">Close</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
