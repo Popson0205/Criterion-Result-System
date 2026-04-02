@@ -3,67 +3,67 @@
 // ============================================================
 const TEACHER_COMMENTS = {
   90: [
-    "It is a delight to report that this student has demonstrated an exceptional level of dedication and intellectual ability this term. The results speak volumes of consistent hard work and a genuine passion for learning. We are immensely proud and look forward to even greater achievements.",
-    "This student has delivered a truly outstanding performance this term, excelling across all subjects with remarkable consistency. The depth of understanding shown is commendable, and it reflects a disciplined and focused approach to academics. Keep this standard high.",
-    "What a brilliant term it has been! This student has shown extraordinary commitment and mastery of the curriculum. Every subject has been approached with seriousness and enthusiasm. This is the kind of performance that sets a lasting example for peers.",
+    "This student has demonstrated exceptional dedication and intellectual ability this term, and we are immensely proud of this outstanding achievement.",
+    "An outstanding performance this term — this student has excelled across all subjects with remarkable consistency and a genuine passion for learning.",
+    "This student has shown extraordinary commitment and mastery of the curriculum this term, setting a lasting example for peers.",
   ],
   80: [
-    "This student has had an excellent term, demonstrating strong academic ability and a commendable work ethic. The results across subjects reflect a student who is focused, diligent, and growing steadily. With continued effort, the very top is within reach.",
-    "A very impressive performance this term. This student has shown real strength in understanding and applying knowledge across the curriculum. The consistency shown is encouraging, and we are confident that sustained effort will yield even greater results.",
-    "This term's results reflect a student who takes their education seriously and puts in genuine effort. The academic performance has been strong and well-rounded. We encourage this student to keep pushing forward — the potential for excellence is clearly there.",
+    "This student has had an excellent term, demonstrating strong academic ability and a commendable work ethic across all subjects.",
+    "A very impressive performance this term, reflecting a focused and diligent student who is growing steadily toward the very top.",
+    "This term's results reflect a student who takes their education seriously, and we are confident that sustained effort will yield even greater results.",
   ],
   70: [
-    "This student has had a good term overall, showing solid understanding across most subjects. There is clear potential here, and with a little more focus and consistency, the results can climb even higher. We encourage continued dedication and self-belief.",
-    "A pleasing performance this term. This student has demonstrated the ability to grasp and apply key concepts well. We encourage more revision and active participation in class, as we believe this student is capable of achieving even more impressive results.",
-    "Good work this term. This student has shown a growing confidence in their studies and a willingness to engage with the curriculum. A stronger push in the areas of challenge will make a significant difference. We are rooting for a stellar next term.",
+    "This student has had a good term overall, showing solid understanding across most subjects, and with more focus the results can climb even higher.",
+    "A pleasing performance this term — this student has demonstrated the ability to grasp and apply key concepts well.",
+    "Good work this term; a stronger push in the areas of challenge will make a significant difference next term.",
   ],
   60: [
-    "This student has shown satisfactory progress this term, demonstrating a reasonable grasp of the subjects covered. There is visible effort, and we encourage this student to build on that foundation by dedicating more time to study and revision going forward.",
-    "A fair performance this term. This student has shown the ability to engage with the material, and we are encouraged by the effort made. With greater consistency and focus, especially in weaker areas, there is every reason to expect a stronger result next term.",
-    "This student is on the right path. The results this term reflect a student who is trying, and that effort is valued. We encourage a more structured approach to studying, as we believe this student has the capacity to achieve significantly better results.",
+    "This student has shown satisfactory progress this term, and we encourage greater dedication to study and revision going forward.",
+    "A fair performance this term — with greater consistency and focus, especially in weaker areas, a stronger result next term is very achievable.",
+    "This student is on the right path, and we encourage a more structured approach to studying to unlock significantly better results.",
   ],
   50: [
-    "This student has made a decent effort this term, and while there is room for improvement, the foundation is there to build upon. We encourage a more disciplined study routine and greater engagement with class work. With determination, a much stronger result is achievable.",
-    "This term's result shows that this student is capable of more with the right focus and commitment. We encourage the student to identify areas of difficulty and seek help early. Every step taken toward improvement is a step toward a brighter academic future.",
-    "We acknowledge the effort made this term and encourage this student not to be discouraged. Academic growth is a journey, and the right attitude and consistent work will make a real difference. We are confident that next term will bring a marked improvement.",
+    "This student has made a decent effort this term, and with a more disciplined study routine a much stronger result is achievable.",
+    "This term's result shows this student is capable of more with the right focus and commitment, and we encourage early engagement with areas of difficulty.",
+    "We acknowledge the effort made this term and are confident that consistent work will bring a marked improvement next term.",
   ],
   0: [
-    "While this term's result has not reflected this student's full potential, we want to encourage them to keep going. Every great achiever faces challenges, and what matters most is the decision to rise and try again. We are here to support this student every step of the way.",
-    "This term has been a learning experience, and we believe it will serve as a turning point. This student has the ability to do better, and with renewed focus, proper guidance, and consistent effort, we are confident that the next term will tell a very different story.",
-    "We encourage this student to see this result not as a setback, but as motivation to work harder. The teachers and staff of this school believe in this student's potential and are committed to providing all the support needed to achieve a much better outcome next term.",
+    "While this term's result has not reflected this student's full potential, we encourage them to keep going with renewed focus and determination.",
+    "This term has been a learning experience, and with renewed focus and consistent effort, we are confident the next term will tell a very different story.",
+    "We encourage this student to see this result as motivation to work harder, and the school remains committed to providing all the support needed.",
   ],
 };
 
 const PRINCIPAL_COMMENTS = {
   90: [
-    "This is an outstanding result that reflects the very best of what a Criterion College student can achieve. You have made your family and this institution immensely proud. I urge you to maintain this standard and continue to inspire those around you.",
-    "Exceptional performance! This result is a testament to your hard work, discipline, and commitment to excellence. Criterion College is proud to have students of your calibre. I encourage you to keep this momentum and aim even higher in the terms ahead.",
-    "A truly remarkable achievement. You have demonstrated that dedication and focus produce extraordinary results. As you progress, I challenge you to remain humble, keep learning, and continue to set the standard for academic excellence in this institution.",
+    "This is an outstanding result that reflects the very best of what a Criterion College student can achieve, and I urge you to maintain this standard.",
+    "Exceptional performance — this result is a testament to your hard work, discipline, and commitment to excellence, and Criterion College is proud of you.",
+    "A truly remarkable achievement that demonstrates dedication and focus; I challenge you to remain humble and continue setting the standard for excellence.",
   ],
   80: [
-    "This is a commendable result that reflects a serious and hardworking student. You have represented this school with distinction, and I am proud of your achievement. I encourage you to keep building on this strong foundation and aim for the very top.",
-    "Excellent work this term. Your performance shows that you understand the value of education and are willing to put in the work required to succeed. I urge you to sustain this level of commitment and continue to make Criterion College proud.",
-    "A very impressive performance. It is clear that you are a focused and determined student. I encourage you to keep this energy going, address any areas of weakness, and come back next term ready to deliver an even greater result.",
+    "This is a commendable result that reflects a serious and hardworking student, and I encourage you to keep building on this strong foundation.",
+    "Excellent work this term — your performance shows you understand the value of education, and I urge you to sustain this level of commitment.",
+    "A very impressive performance; I encourage you to keep this energy going, address any areas of weakness, and aim even higher next term.",
   ],
   70: [
-    "A good result this term. You have shown that you are capable of achieving strong academic outcomes when you apply yourself. I encourage you to push a little harder, seek help where needed, and come back next term with even greater determination.",
-    "Well done on a solid performance this term. You are clearly making progress, and I am pleased with the effort you have shown. I challenge you to raise the bar further — the potential for excellence is evident, and I look forward to seeing it fully realised.",
-    "This is an encouraging result. You have demonstrated good academic ability, and I urge you to continue building on it. Consistency is key — keep attending classes, completing your assignments, and engaging with your studies, and the results will continue to improve.",
+    "A good result this term — you have shown that you are capable of strong academic outcomes, and I encourage you to push a little harder.",
+    "Well done on a solid performance this term; I challenge you to raise the bar further, as the potential for excellence is clearly evident.",
+    "This is an encouraging result, and I urge you to continue building on it with consistency, class engagement, and completed assignments.",
   ],
   60: [
-    "A satisfactory result this term. While there is room for improvement, I am encouraged by the effort you have shown. I urge you to work harder in the coming term, seek guidance from your teachers, and believe in your ability to achieve a much stronger outcome.",
-    "You have shown some good effort this term, and I encourage you to keep that spirit alive. With a more focused approach to your studies and greater consistency, I am confident you can achieve significantly better results. This school is behind you all the way.",
-    "A fair performance this term. I encourage you to use this result as motivation to work harder and smarter. Identify the subjects where you need more support and take action early. You have the potential to do much better, and we are here to help you get there.",
+    "A satisfactory result this term — I urge you to work harder in the coming term and believe in your ability to achieve a much stronger outcome.",
+    "You have shown some good effort this term, and with a more focused approach I am confident you can achieve significantly better results.",
+    "A fair performance this term — I encourage you to identify subjects where you need more support and take action early next term.",
   ],
   50: [
-    "While this term's result is below your potential, I encourage you not to be discouraged. Use this as a call to action — work harder, engage more in class, and seek help where you are struggling. I believe in your ability to achieve a much better result next term.",
-    "This result shows that there is significant room for growth, and I want you to see that as an opportunity. With the right effort, focus, and support from your teachers, you can turn this around completely. Criterion College is committed to helping you succeed.",
-    "I encourage you to reflect on this term's result and use it as a stepping stone. Academic success requires consistent effort and a willingness to improve. Come back next term with renewed determination, and I am confident you will surprise yourself and everyone around you.",
+    "While this term's result is below your potential, I encourage you to use it as a call to action and come back next term with renewed determination.",
+    "This result shows significant room for growth, and with the right effort, focus, and support from your teachers, you can turn this around completely.",
+    "I encourage you to reflect on this term's result and come back next term with renewed determination — I am confident you will surprise yourself.",
   ],
   0: [
-    "I want to encourage you to keep your head up. This result does not define your potential — it is simply a signal that more effort and support are needed. This school is fully committed to helping you grow, and I urge you to come back next term ready to give your very best.",
-    "Every student has the capacity to succeed, and I firmly believe that includes you. This term may not have gone as hoped, but it is not the end of the story. With hard work, the right attitude, and the support of your teachers, a much better result is absolutely within your reach.",
-    "Do not be discouraged by this term's result. Some of the greatest success stories begin with a difficult chapter. I challenge you to use this as your motivation, engage more with your studies, and let next term be the beginning of your academic turnaround. We are with you.",
+    "I want to encourage you to keep your head up, as this result does not define your potential — come back next term ready to give your very best.",
+    "Every student has the capacity to succeed, and with hard work, the right attitude, and teacher support, a much better result is absolutely within your reach.",
+    "Do not be discouraged by this term's result; I challenge you to use it as motivation and let next term be the beginning of your academic turnaround.",
   ],
 };
 
@@ -144,18 +144,14 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
 <meta charset="UTF-8">
 <title>Result</title>
 <style>
-  /* ── Suppress browser header/footer (date, URL, title) on print ── */
   @page {
     size: A4;
     margin: 12mm 14mm;
-    /* These suppress the browser-added header/footer in most browsers */
     margin-top: 12mm;
     margin-bottom: 12mm;
   }
   @media print {
-    /* Chrome/Edge: hide running heads */
     html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    /* Hide default browser print header/footer by setting title to empty */
     head title { display: none; }
   }
   * { box-sizing: border-box; margin:0; padding:0; }
@@ -227,7 +223,7 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
   <table style="margin-bottom:0;border:1px solid #999;">
     <thead>
       <tr>
-        <th style="text-align:left;width:25%;background:#55A845;color:#fff;font-size:12px;border:1px solid #999;">SUBJECTS</th>
+        <th style="text-align:left;width:25%;background:#55A845;color:#fff;font-size:12px;border:1px solid #999;">SUBJECT</th>
         <th style="background:#55A845;color:#fff;border:1px solid #999;">TEST</th>
         <th style="background:#55A845;color:#fff;border:1px solid #999;">EXAM</th>
         <th style="background:#55A845;color:#fff;border:1px solid #999;">TOTAL</th>
@@ -236,7 +232,7 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
         <th style="background:#55A845;color:#fff;border:1px solid #999;">RMKS</th>
       </tr>
       <tr>
-        <th style="text-align:left;background:#6ab55a;color:#fff;font-size:12px;border:1px solid #999;">SUBJECTS</th>
+        <th style="text-align:left;background:#6ab55a;color:#fff;font-size:12px;border:1px solid #999;">SUBJECT</th>
         <th style="background:#6ab55a;color:#fff;border:1px solid #999;">40</th>
         <th style="background:#6ab55a;color:#fff;border:1px solid #999;">60</th>
         <th style="background:#6ab55a;color:#fff;border:1px solid #999;">100</th>
@@ -259,7 +255,7 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
     </tfoot>
   </table>
 
-  <!-- ═══ KEYS — centred below table ═══ -->
+  <!-- ═══ KEYS ═══ -->
   <div style="text-align:center;font-size:11px;color:#555;font-style:italic;padding:3px 0 5px;border-bottom:1px solid #ccc;margin-bottom:5px;">
     <strong>Keys:</strong>&nbsp;&nbsp;
     ≥70 = <strong style="color:#1a6e3c;">A</strong> Excellent &nbsp;|&nbsp;
@@ -275,9 +271,9 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
       <td style="border:none;width:33%;vertical-align:top;padding-right:4px;">
         <table style="border:1px solid #999;">
           <tr><th colspan="2" style="background:#D8DB9C;color:#181717;font-size:10px;font-weight:bold;border:1px solid #999;">Attendance Table</th></tr>
-          <tr><td style="text-align:left;background:#fff;font-size:12px;border:1px solid #999;">School Days</td><td style="font-size:12px;border:1px solid #999;">${settings.daysInSchool || ''}</td></tr>
-          <tr><td style="text-align:left;background:#C4D79B;font-size:12px;border:1px solid #999;">Days Attended</td><td style="background:#C4D79B;font-size:12px;border:1px solid #999;">${student.daysAttended || ''}</td></tr>
-          <tr><td style="text-align:left;background:#fff;font-size:12px;border:1px solid #999;">Days Absent</td><td style="font-size:12px;border:1px solid #999;">${daysAbsent}</td></tr>
+          <tr><td style="text-align:left;background:#fff;font-size:12px;border:1px solid #999;">School Days</td><td style="font-size:12px;border:1px solid #999;width:45%;">${settings.daysInSchool || ''}</td></tr>
+          <tr><td style="text-align:left;background:#C4D79B;font-size:12px;border:1px solid #999;">Days Attended</td><td style="background:#C4D79B;font-size:12px;border:1px solid #999;width:45%;">${student.daysAttended || ''}</td></tr>
+          <tr><td style="text-align:left;background:#fff;font-size:12px;border:1px solid #999;">Days Absent</td><td style="font-size:12px;border:1px solid #999;width:45%;">${daysAbsent}</td></tr>
         </table>
       </td>
       <td style="border:none;width:33%;vertical-align:top;padding:0 2px;">
@@ -309,7 +305,7 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
     </tr>
   </table>
 
-  <!-- ═══ COMMENTS — two-column with vertical divider (matching image) ═══ -->
+  <!-- ═══ COMMENTS ═══ -->
   <table style="border:none;border-top:1px solid #ccc;border-bottom:1px solid #ccc;margin-bottom:0;width:100%;">
     <tr>
       <td style="border:none;border-right:1px solid #999;width:38%;padding:5px 8px 5px 0;vertical-align:top;">
