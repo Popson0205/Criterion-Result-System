@@ -223,22 +223,18 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
   <table style="margin-bottom:0;border:1px solid #999;">
     <thead>
       <tr>
-        <th style="text-align:left;width:25%;background:#55A845;color:#fff;font-size:12px;border:1px solid #999;">SUBJECT</th>
+        <th rowspan="2" style="text-align:center;width:25%;background:#55A845;color:#fff;font-size:12px;border:1px solid #999;vertical-align:middle;">SUBJECT</th>
         <th style="background:#55A845;color:#fff;border:1px solid #999;">TEST</th>
         <th style="background:#55A845;color:#fff;border:1px solid #999;">EXAM</th>
         <th style="background:#55A845;color:#fff;border:1px solid #999;">TOTAL</th>
-        <th style="background:#55A845;color:#fff;border:1px solid #999;">AVRG</th>
-        <th style="background:#55A845;color:#fff;border:1px solid #999;">GRADE</th>
-        <th style="background:#55A845;color:#fff;border:1px solid #999;">RMKS</th>
+        <th rowspan="2" style="background:#55A845;color:#fff;border:1px solid #999;vertical-align:middle;">AVRG</th>
+        <th rowspan="2" style="background:#55A845;color:#fff;border:1px solid #999;vertical-align:middle;">GRADE</th>
+        <th rowspan="2" style="background:#55A845;color:#fff;border:1px solid #999;vertical-align:middle;">RMKS</th>
       </tr>
       <tr>
-        <th style="text-align:left;background:#6ab55a;color:#fff;font-size:12px;border:1px solid #999;">SUBJECT</th>
         <th style="background:#6ab55a;color:#fff;border:1px solid #999;">40</th>
         <th style="background:#6ab55a;color:#fff;border:1px solid #999;">60</th>
         <th style="background:#6ab55a;color:#fff;border:1px solid #999;">100</th>
-        <th style="background:#6ab55a;color:#fff;border:1px solid #999;">AVRG</th>
-        <th style="background:#6ab55a;color:#fff;border:1px solid #999;">GRADE</th>
-        <th style="background:#6ab55a;color:#fff;border:1px solid #999;">RMKS</th>
       </tr>
     </thead>
     <tbody>${subjectRows}</tbody>
