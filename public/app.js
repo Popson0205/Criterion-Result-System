@@ -534,16 +534,22 @@ function renderEnterResult() {
   const { rows, totalCA, totalExam, totalScore, count, avg, gradeCounts } = computeResult(existing.scores, subjects);
 
   const subjectRows = rows.map((r,i) => {
-    const rowBg = i%2===0 ? 'style="background:#f5f5f5;color:#111;"' : 'style="color:#111;"';
-    return `<tr ${rowBg}>
-      <td style="text-align:left;padding:6px 10px;font-weight:500;">${r.sub}</td>
-      <td><input type="number" class="score-inp" min="0" max="40" data-sub="${r.sub}" data-type="ca"
-        value="${existing.scores[r.sub]?.ca??''}" placeholder="0-40" /></td>
-      <td><input type="number" class="score-inp" min="0" max="60" data-sub="${r.sub}" data-type="exam"
-        value="${existing.scores[r.sub]?.exam??''}" placeholder="0-60" /></td>
-      <td class="comp-total" data-sub="${r.sub}" style="font-weight:700;">${r.total}</td>
-      <td class="comp-grade" data-sub="${r.sub}" style="font-weight:700;color:${r.color||'inherit'};">${r.grade}</td>
-      <td class="comp-remark" data-sub="${r.sub}">${r.remark}</td>
+    const rowBg = i%2===0 ? '#f5f5f5' : '#ffffff';
+    return `<tr style="background:${rowBg};">
+      <td style="text-align:left;padding:6px 10px;font-weight:500;color:#111;">${r.sub}</td>
+      <td style="padding:5px 8px;">
+        <input type="number" class="score-inp" min="0" max="40" data-sub="${r.sub}" data-type="ca"
+          value="${existing.scores[r.sub]?.ca??''}" placeholder="0-40"
+          style="width:64px;text-align:center;padding:4px 6px;border:1.5px solid #aaa;border-radius:6px;background:#fff;color:#111;font-size:14px;" />
+      </td>
+      <td style="padding:5px 8px;">
+        <input type="number" class="score-inp" min="0" max="60" data-sub="${r.sub}" data-type="exam"
+          value="${existing.scores[r.sub]?.exam??''}" placeholder="0-60"
+          style="width:64px;text-align:center;padding:4px 6px;border:1.5px solid #aaa;border-radius:6px;background:#fff;color:#111;font-size:14px;" />
+      </td>
+      <td class="comp-total" data-sub="${r.sub}" style="font-weight:700;color:#111;">${r.total}</td>
+      <td class="comp-grade" data-sub="${r.sub}" style="font-weight:700;color:${r.color||'#111'};">${r.grade}</td>
+      <td class="comp-remark" data-sub="${r.sub}" style="color:#111;">${r.remark}</td>
     </tr>`;
   }).join('');
 
