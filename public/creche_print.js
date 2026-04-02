@@ -3,7 +3,7 @@
 // Classes: Creche 1, Creche 2, Pre-Nursery, Nursery 1, Nursery 2
 // ============================================================
 
-const CRECHE_CLASSES = ['Creche 1', 'Creche 2', 'Pre-Nursery', 'Nursery 1', 'Nursery 2'];
+const CRECHE_CLASSES = ['Creche 1', 'Creche 2'];
 
 function isCrecheClass(classId) {
   return CRECHE_CLASSES.includes(classId);
