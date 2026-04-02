@@ -534,7 +534,7 @@ function renderEnterResult() {
   const { rows, totalCA, totalExam, totalScore, count, avg, gradeCounts } = computeResult(existing.scores, subjects);
 
   const subjectRows = rows.map((r,i) => {
-    const rowBg = i%2===0 ? 'style="background:#f0fdf4;"' : '';
+    const rowBg = i%2===0 ? 'style="background:#f5f5f5;"' : '';
     return `<tr ${rowBg}>
       <td style="text-align:left;padding:6px 10px;font-weight:500;">${r.sub}</td>
       <td><input type="number" class="score-inp" min="0" max="40" data-sub="${r.sub}" data-type="ca"
@@ -596,7 +596,7 @@ function renderEnterResult() {
         </thead>
         <tbody id="scores-body">${subjectRows}</tbody>
         <tfoot>
-          <tr style="background:#D8DB9C;font-weight:bold;">
+          <tr style="background:#1a6e3c;color:white;font-weight:bold;">
             <td style="padding:6px 10px;">Total</td>
             <td id="foot-ca" style="text-align:center;">${totalCA||''}</td>
             <td id="foot-exam" style="text-align:center;">${totalExam||''}</td>
