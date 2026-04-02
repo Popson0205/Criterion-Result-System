@@ -534,7 +534,7 @@ function renderEnterResult() {
   const { rows, totalCA, totalExam, totalScore, count, avg, gradeCounts } = computeResult(existing.scores, subjects);
 
   const subjectRows = rows.map((r,i) => {
-    const rowBg = i%2===0 ? 'style="background:#f5f5f5;"' : '';
+    const rowBg = i%2===0 ? 'style="background:#f5f5f5;color:#111;"' : 'style="color:#111;"';
     return `<tr ${rowBg}>
       <td style="text-align:left;padding:6px 10px;font-weight:500;">${r.sub}</td>
       <td><input type="number" class="score-inp" min="0" max="40" data-sub="${r.sub}" data-type="ca"
@@ -1277,28 +1277,28 @@ function renderCrecheEntryForm(student, existing, entrySession, entryTerm) {
       </tr>`;
 
     const skillRows = section.skills.map((skill, i) => {
-      const bg = i % 2 === 0 ? 'background:#f0fdf4;' : '';
+      const rowBg  = i % 2 === 0 ? '#ffffff' : '#f5f5f5';
       const ca   = ratings[skill]?.ca   ?? '';
       const exam = ratings[skill]?.exam ?? '';
       const total = (ca !== '' && exam !== '') ? parseFloat(ca||0) + parseFloat(exam||0) : '';
       const grade = total !== '' ? getCrecheGrade(total) : null;
-      return `<tr style="${bg}" data-creche-row="${skill}">
-        <td style="text-align:left;padding:7px 12px;font-weight:500;font-size:13px;width:40%;">${skill}</td>
+      return `<tr style="background:${rowBg};" data-creche-row="${skill}">
+        <td style="text-align:left;padding:7px 12px;font-weight:500;font-size:13px;width:40%;color:#111;">${skill}</td>
         <td style="padding:5px 8px;width:15%;">
           <input type="number" class="score-inp creche-ca" min="0" max="40"
             data-sub="${skill}" data-type="ca"
             value="${ca}" placeholder="0-40"
-            style="width:64px;text-align:center;padding:4px 6px;border:1px solid var(--border-default);border-radius:6px;background:var(--surface-secondary);font-size:13px;"
+            style="width:64px;text-align:center;padding:4px 6px;border:1.5px solid #aaa;border-radius:6px;background:#fff;color:#111;font-size:14px;"
             oninput="updateCrecheRow(this)" />
         </td>
         <td style="padding:5px 8px;width:15%;">
           <input type="number" class="score-inp creche-exam" min="0" max="60"
             data-sub="${skill}" data-type="exam"
             value="${exam}" placeholder="0-60"
-            style="width:64px;text-align:center;padding:4px 6px;border:1px solid var(--border-default);border-radius:6px;background:var(--surface-secondary);font-size:13px;"
+            style="width:64px;text-align:center;padding:4px 6px;border:1.5px solid #aaa;border-radius:6px;background:#fff;color:#111;font-size:14px;"
             oninput="updateCrecheRow(this)" />
         </td>
-        <td class="creche-grade-cell" data-sub="${skill}" style="padding:7px 12px;font-weight:bold;font-size:13px;color:${grade?grade.color:'#aaa'};">
+        <td class="creche-grade-cell" data-sub="${skill}" style="padding:7px 12px;font-weight:bold;font-size:13px;color:${grade?grade.color:'#888'};">
           ${grade ? grade.rating : '—'}
         </td>
       </tr>`;
