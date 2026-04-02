@@ -1,13 +1,13 @@
 // ============================================================
-// api.js — replaces localStorage DB object with server API calls
+// api.js — replaces sessionStorage DB object with server API calls
 // All functions are async; app.js calls await DB.*()
 // ============================================================
 
 const API = {
   // ── Token management ──────────────────────────────────────
-  getToken() { return localStorage.getItem('cc_token'); },
-  getRole()  { return localStorage.getItem('cc_role'); },
-  getUser()  { return JSON.parse(localStorage.getItem('cc_user') || 'null'); },
+  getToken() { return sessionStorage.getItem('cc_token'); },
+  getRole()  { return sessionStorage.getItem('cc_role'); },
+  getUser()  { return JSON.parse(sessionStorage.getItem('cc_user') || 'null'); },
 
   headers() {
     return {
@@ -24,9 +24,9 @@ const API = {
     });
     if (res.status === 401) {
       // Token expired — redirect to login
-      localStorage.removeItem('cc_token');
-      localStorage.removeItem('cc_role');
-      localStorage.removeItem('cc_user');
+      sessionStorage.removeItem('cc_token');
+      sessionStorage.removeItem('cc_role');
+      sessionStorage.removeItem('cc_user');
       window.location.href = '/';
       return;
     }
@@ -40,7 +40,7 @@ const API = {
 };
 
 // ── DB object — same interface as original data.js DB ─────────
-// app.js calls these; they now hit the server instead of localStorage
+// app.js calls these; they now hit the server instead of sessionStorage
 const DB = {
   // Cache to avoid hammering the server on every render
   _students: null,
