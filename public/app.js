@@ -123,6 +123,8 @@ async function checkShareToken() {
         // Store for public result page
         window._shareStudent = data.student;
         window._shareResult  = data.result;
+        // Inject settings so stamp & resumption date render correctly
+        if (data.settings) DB._settings = data.settings;
         previewStudentId = data.student.id;
         currentPage = 'public_result';
         render();
@@ -902,7 +904,9 @@ function printResult(studentId) {
 async function shareResult(studentId) {
   const settings = DB.getSettings();
   const token = await DB.createShareToken(studentId, settings.session, settings.term);
-  const url = window.location.origin + window.location.pathname + '?share=' + token;
+  const student = DB.getStudent(studentId);
+  const nameSlug = student ? student.name.trim().replace(/\s+/g, '-') : 'result';
+  const url = window.location.origin + window.location.pathname + '?share=' + token + '&name=' + encodeURIComponent(nameSlug);
   // Copy to clipboard
   navigator.clipboard.writeText(url).catch(()=>{});
   // Show modal
