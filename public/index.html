@@ -121,8 +121,130 @@
       font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px;
     }
 
-    @media (max-width: 768px) {
-      .sidebar { width: 60px; }
+    /* ── ANDROID PORTRAIT & SMALL MOBILE ── */
+    @media (max-width: 600px) {
+
+      /* Layout: stack sidebar on top */
+      .layout { flex-direction: column; min-height: 100vh; }
+
+      /* Sidebar becomes a compact top nav bar */
+      .sidebar {
+        width: 100% !important;
+        min-height: unset !important;
+        height: auto !important;
+        flex-direction: row !important;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        padding: 0 !important;
+        overflow-x: auto;
+      }
+
+      .sidebar-logo {
+        padding: 10px 12px !important;
+        border-bottom: none !important;
+        border-right: 1px solid rgba(255,255,255,0.15);
+        flex-shrink: 0;
+        gap: 6px !important;
+      }
+      .sidebar-logo img { width: 28px !important; height: 28px !important; }
+      .sidebar-school { font-size: 11px !important; }
+      .sidebar-sub { display: none; }
+
+      .sidebar-nav {
+        flex-direction: row !important;
+        flex: 1;
+        padding: 6px 8px !important;
+        gap: 4px !important;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .sidebar-nav::-webkit-scrollbar { display: none; }
+
+      .nav-item {
+        padding: 7px 10px !important;
+        font-size: 12px !important;
+        white-space: nowrap;
+        flex-shrink: 0;
+        width: auto !important;
+        gap: 5px !important;
+      }
+      .nav-icon { font-size: 14px !important; width: auto !important; }
+
+      /* Hide user info & logout from nav bar, show logout as last nav item */
+      .sidebar > div[style*="padding:8px"] { display: none !important; }
+      .logout-btn { margin: 6px 6px 6px 0 !important; flex-shrink: 0; }
+
+      /* Main area full width */
+      .main-area {
+        padding: 12px !important;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      /* Page header stacks */
+      .page-header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 8px !important;
+        margin-bottom: 14px !important;
+      }
+      .page-title { font-size: 18px !important; }
+
+      /* Stats: 2 columns */
+      .stats-row { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
+      .stat-val { font-size: 20px !important; }
+
+      /* Class grid: 2 columns */
+      .class-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+      /* Filter bar stacks */
+      .filter-bar {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 8px !important;
+        padding: 10px 12px !important;
+      }
+      .filter-bar .input,
+      .filter-bar select { width: 100% !important; }
+
+      /* Tables: horizontal scroll */
+      .card { overflow-x: auto !important; padding: 10px !important; }
+      .data-table { min-width: 480px; }
+      .data-table th, .data-table td {
+        padding: 8px 10px !important;
+        font-size: 12px !important;
+      }
+
+      /* Score entry table */
+      .score-inp {
+        width: 52px !important;
+        font-size: 13px !important;
+        padding: 4px !important;
+      }
+
+      /* Inputs: prevent iOS/Android zoom on focus */
+      .input, input, select, textarea {
+        font-size: 16px !important;
+      }
+
+      /* Login card full width */
+      .login-card {
+        width: calc(100% - 24px) !important;
+        padding: 24px 16px !important;
+      }
+      .login-school { font-size: 16px !important; }
+      .role-btn .role-icon { font-size: 22px !important; }
+      .role-btn { padding: 10px 8px !important; }
+
+      /* Buttons */
+      .btn { font-size: 13px !important; }
+    }
+
+    /* ── TABLET (768px) — keep sidebar but narrower ── */
+    @media (min-width: 601px) and (max-width: 900px) {
+      .sidebar { width: 60px !important; }
       .sidebar-school, .sidebar-sub, .nav-item span:last-child { display: none; }
       .stats-row { grid-template-columns: repeat(2, 1fr); }
       .main-area { padding: 16px; }
