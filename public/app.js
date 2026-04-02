@@ -10,9 +10,9 @@ let previewStudentId = null;
 
 function isAdmin() { return API.getRole() === 'admin'; }
 function doLogout() {
-  localStorage.removeItem('cc_token');
-  localStorage.removeItem('cc_role');
-  localStorage.removeItem('cc_user');
+  sessionStorage.removeItem('cc_token');
+  sessionStorage.removeItem('cc_role');
+  sessionStorage.removeItem('cc_user');
   DB.invalidate();
   currentPage = 'dashboard';
   renderLoginPage();
@@ -94,9 +94,9 @@ async function doLogin() {
     });
     const data = await res.json();
     if (!res.ok) { errEl.textContent = data.error || 'Login failed'; return; }
-    localStorage.setItem('cc_token', data.token);
-    localStorage.setItem('cc_role',  data.role);
-    localStorage.setItem('cc_user',  JSON.stringify({ name: data.name, username: data.username, role: data.role }));
+    sessionStorage.setItem('cc_token', data.token);
+    sessionStorage.setItem('cc_role',  data.role);
+    sessionStorage.setItem('cc_user',  JSON.stringify({ name: data.name, username: data.username, role: data.role }));
     currentPage = data.role === 'teacher' ? 'results' : 'dashboard';
     try {
       await DB.init();
@@ -505,7 +505,7 @@ function renderResults() {
                 <button class="btn btn-${r?'secondary':'primary'} btn-sm" onclick="editStudentId='${s.id}';navigate('enter_result');">${r?'Edit':'Enter'}</button>
                 ${r ? `<button class="btn btn-ghost btn-sm" onclick="previewStudentId='${s.id}';navigate('preview_result');">Preview</button>
                        <button class="btn btn-ghost btn-sm" onclick="shareResult('${s.id}')">🔗 Share</button>
-                       <button class="btn btn-ghost btn-sm" onclick="printResult('${s.id}')">🖨️ Print</button>` : ''}
+                       ${isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="printResult('${s.id}')">🖨️ Print</button>` : ''}` : ''}
               </div>
             </td>
           </tr>`;
@@ -665,7 +665,7 @@ function renderPreviewResult() {
     <div style="display:flex;gap:8px;">
       <button class="btn btn-ghost" onclick="navigate('results')">← Back</button>
       <button class="btn btn-secondary" onclick="shareResult('${student.id}')">🔗 Share Link</button>
-      <button class="btn btn-primary" onclick="printResult('${student.id}')">🖨️ Print</button>
+      ${isAdmin() ? `<button class="btn btn-primary" onclick="printResult('${student.id}')">🖨️ Print</button>` : ''}
     </div>
   </div>
   <div class="card" style="padding:0;overflow:hidden;">
@@ -968,9 +968,9 @@ async function boot() {
     await DB.init();
     render();
   } catch(e) {
-    localStorage.removeItem('cc_token');
-    localStorage.removeItem('cc_role');
-    localStorage.removeItem('cc_user');
+    sessionStorage.removeItem('cc_token');
+    sessionStorage.removeItem('cc_role');
+    sessionStorage.removeItem('cc_user');
     renderLoginPage();
   }
 }
