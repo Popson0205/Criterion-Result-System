@@ -60,6 +60,20 @@ app.get('/api/students', requireAuth, async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── STUDENTS BY CLASS (admin only) ───────────────────────────
+app.get('/api/students/by-class/:classId', requireAdmin, async (req, res) => {
+  try {
+    const classId = decodeURIComponent(req.params.classId);
+    const all = await Students.list();
+    const filtered = all
+      .filter(s => s.classId === classId)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    res.json(filtered);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/students', requireAdmin, async (req, res) => {
   try { await Students.save(req.body); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
