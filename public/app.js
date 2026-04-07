@@ -294,7 +294,13 @@ function renderStudents() {
   return `
   <div class="page-header">
     <h1 class="page-title">Students</h1>
-    <button class="btn btn-primary" onclick="navigate('add_student');editStudentId=null;">+ Add Student</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      ${filterClass
+        ? `<button class="btn btn-secondary" onclick="downloadClassList('${filterClass.replace(/'/g,"\\'")}')">📥 Download ${filterClass} List</button>`
+        : `<button class="btn btn-secondary" onclick="showDownloadClassModal()">📥 Download Class List</button>`
+      }
+      <button class="btn btn-primary" onclick="navigate('add_student');editStudentId=null;">+ Add Student</button>
+    </div>
   </div>
 
   <div class="filter-bar card" style="margin-bottom:16px;gap:16px;flex-wrap:wrap;">
@@ -359,7 +365,291 @@ function renderStudents() {
           }).join('')}
       </tbody>
     </table>
+  </div>
+
+  <!-- Download Class List Modal -->
+  <div id="download-class-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+    <div class="card" style="width:400px;padding:28px;">
+      <h3 style="margin-bottom:16px;color:#1a6e3c;">📥 Download Student List</h3>
+      <div class="form-group" style="margin-bottom:20px;">
+        <label>Select Class</label>
+        <select id="download-class-select" class="input">
+          <option value="">-- Select a Class --</option>
+          ${ALL_CLASSES.map(c=>`<option value="${c}">${c}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-primary" onclick="downloadSelectedClass()">📥 Download</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('download-class-modal').style.display='none'">Cancel</button>
+      </div>
+    </div>
   </div>`;
+}
+
+function showDownloadClassModal() {
+  document.getElementById('download-class-modal').style.display = 'flex';
+}
+
+function downloadSelectedClass() {
+  const sel = document.getElementById('download-class-select');
+  const cls = sel ? sel.value : '';
+  if (!cls) { alert('Please select a class.'); return; }
+  document.getElementById('download-class-modal').style.display = 'none';
+  downloadClassList(cls);
+}
+
+// ── DOWNLOAD CLASS LIST ───────────────────────────────────────
+function downloadClassList(classId) {
+  const settings  = DB.getSettings();
+  const students  = DB.getStudents().filter(s => s.classId === classId);
+
+  if (students.length === 0) {
+    alert('No students found in ' + classId);
+    return;
+  }
+
+  // Sort alphabetically
+  const sorted = [...students].sort((a, b) => a.name.localeCompare(b.name));
+
+  // School logo HTML for the header
+  const logoSrc = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO) ? SCHOOL_LOGO : null;
+  const logoTag = logoSrc
+    ? `<img src="${logoSrc}" style="width:80px;height:80px;object-fit:contain;border-radius:50%;border:2px solid #1a6e3c;" />`
+    : `<div style="width:80px;height:80px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:26px;">CC</div>`;
+
+  const rows = sorted.map((s, i) => {
+    const passportCell = s.passport
+      ? `<img src="${s.passport}" style="width:38px;height:44px;object-fit:cover;border-radius:3px;border:1px solid #55A845;display:block;margin:0 auto;" />`
+      : `<div style="width:38px;height:44px;background:#e8f5e9;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:18px;margin:0 auto;">👤</div>`;
+    const rowBg = i % 2 === 0 ? '#ffffff' : '#f0fdf4';
+    return `
+      <tr style="background:${rowBg};">
+        <td style="text-align:center;padding:7px 10px;font-weight:700;color:#1a6e3c;font-size:13px;">${i + 1}</td>
+        <td style="text-align:center;padding:7px 10px;">${passportCell}</td>
+        <td style="padding:7px 14px;font-weight:600;font-size:13px;color:#111;">${s.name}</td>
+        <td style="padding:7px 14px;font-size:12px;color:#555;">${s.classId}</td>
+        <td style="padding:7px 14px;font-size:12px;color:#555;">${settings.session || '—'}</td>
+        <td style="padding:7px 14px;font-size:12px;color:#555;">${settings.term || '—'}</td>
+        <td style="padding:7px 14px;font-size:12px;color:#aaa;"></td>
+      </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>${classId} — Student List — Criterion College</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', Arial, sans-serif;
+      background: #fff;
+      color: #111;
+      padding: 0;
+    }
+    .page-wrap {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 32px 28px 40px;
+    }
+
+    /* ── Header ── */
+    .school-header {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      border-bottom: 3px solid #1a6e3c;
+      padding-bottom: 18px;
+      margin-bottom: 20px;
+    }
+    .school-info { flex: 1; }
+    .school-name {
+      font-size: 22px;
+      font-weight: 900;
+      color: #1a6e3c;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .school-address {
+      font-size: 12px;
+      color: #555;
+      margin-top: 3px;
+    }
+    .school-motto {
+      font-size: 11px;
+      font-style: italic;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    /* ── Document title strip ── */
+    .doc-title-strip {
+      background: linear-gradient(135deg, #1a6e3c, #55A845);
+      color: white;
+      padding: 10px 18px;
+      border-radius: 6px;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .doc-title-strip .doc-title {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+    .doc-title-strip .doc-meta {
+      font-size: 12px;
+      opacity: 0.85;
+    }
+
+    /* ── Table ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead tr {
+      background: #1a6e3c;
+      color: white;
+    }
+    thead th {
+      padding: 9px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      text-align: left;
+    }
+    thead th:first-child { text-align: center; width: 40px; }
+    thead th:nth-child(2) { text-align: center; width: 60px; }
+    tbody td { border-bottom: 1px solid #e5e7eb; vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: none; }
+
+    /* ── Summary strip ── */
+    .summary-strip {
+      margin-top: 18px;
+      padding: 10px 16px;
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #1a6e3c;
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .summary-strip span { font-weight: 700; }
+
+    /* ── Footer ── */
+    .doc-footer {
+      margin-top: 32px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 11px;
+      color: #aaa;
+    }
+    .signature-block {
+      text-align: center;
+      min-width: 180px;
+    }
+    .signature-line {
+      border-top: 1px solid #555;
+      margin-bottom: 4px;
+      margin-top: 32px;
+    }
+    .signature-label { font-size: 11px; color: #555; font-weight: 600; }
+
+    @media print {
+      body { padding: 0; }
+      .page-wrap { padding: 20px 16px; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <!-- School Header -->
+  <div class="school-header">
+    <div>${logoTag}</div>
+    <div class="school-info">
+      <div class="school-name">Criterion College</div>
+      <div class="school-address">Osogbo, Osun State, Nigeria</div>
+      ${settings.schoolMotto ? `<div class="school-motto">"${settings.schoolMotto}"</div>` : ''}
+    </div>
+  </div>
+
+  <!-- Document Title Strip -->
+  <div class="doc-title-strip">
+    <div class="doc-title">📋 Student List — ${classId}</div>
+    <div class="doc-meta">
+      Session: ${settings.session || '—'} &nbsp;|&nbsp; Term: ${settings.term || '—'} &nbsp;|&nbsp; Printed: ${new Date().toLocaleDateString('en-NG', { day:'2-digit', month:'long', year:'numeric' })}
+    </div>
+  </div>
+
+  <!-- Print Button (hidden on print) -->
+  <div class="no-print" style="margin-bottom:14px;display:flex;gap:10px;">
+    <button onclick="window.print()" style="padding:8px 18px;background:#1a6e3c;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">🖨️ Print / Save as PDF</button>
+    <button onclick="window.close()" style="padding:8px 14px;background:#f3f4f6;color:#555;border:1px solid #ddd;border-radius:6px;font-size:13px;cursor:pointer;">Close</button>
+  </div>
+
+  <!-- Student Table -->
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Photo</th>
+        <th>Student Name</th>
+        <th>Class</th>
+        <th>Session</th>
+        <th>Term</th>
+        <th>Signature / Remark</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+    </tbody>
+  </table>
+
+  <!-- Summary -->
+  <div class="summary-strip">
+    <div>Class: <span>${classId}</span></div>
+    <div>Total Students: <span>${sorted.length}</span></div>
+    <div>Session: <span>${settings.session || '—'}</span></div>
+    <div>Term: <span>${settings.term || '—'}</span></div>
+  </div>
+
+  <!-- Footer / Signatures -->
+  <div class="doc-footer">
+    <div class="signature-block">
+      <div class="signature-line"></div>
+      <div class="signature-label">Class Teacher's Signature</div>
+    </div>
+    <div style="font-size:11px;color:#bbb;text-align:center;">
+      Criterion College — Result Management System<br/>
+      Generated: ${new Date().toLocaleString('en-NG')}
+    </div>
+    <div class="signature-block">
+      <div class="signature-line"></div>
+      <div class="signature-label">Principal's Signature</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+  win.document.title = classId + ' — Student List — Criterion College';
 }
 
 // ── ADD/EDIT STUDENT ──────────────────────────────────────────
@@ -1211,6 +1501,9 @@ function renderBatchPrint() {
                           🖨️ Print All ${d.withResult} Result${d.withResult !== 1 ? 's' : ''}
                         </button>`
                       : `<span style="font-size:12px;color:var(--text-muted);">No results yet</span>`}
+                    <button class="btn btn-secondary btn-sm" onclick="downloadClassList('${d.cls}')">
+                      📥 Student List
+                    </button>
                   </div>
                 </td>
               </tr>`;
