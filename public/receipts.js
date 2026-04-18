@@ -1,6 +1,5 @@
 // ============================================================
 // receipts.js — Criterion College Receipt Module
-// Drop into: public/receipts.js
 // ============================================================
 
 const DEFAULT_FEE_ITEMS = [
@@ -43,8 +42,7 @@ function rcptFormatMoney(val) {
 // ── Receipts List Page ───────────────────────────────────────
 async function renderReceiptsPage() {
   const canCreate = isAdmin() || API.getRole() === 'bursar';
-  document.getElementById('app').innerHTML = `
-    <div class="main-area" style="padding:24px 28px;">
+  document.getElementById('main-content').innerHTML = `
       <div class="page-header">
         <h1 class="page-title">🧾 Receipts</h1>
         ${canCreate ? `<button class="btn btn-primary" onclick="renderNewReceiptForm()">+ New Receipt</button>` : ''}
@@ -58,7 +56,7 @@ async function renderReceiptsPage() {
       <div id="receipts-table-wrap" class="card" style="padding:0;overflow:hidden;">
         <div style="padding:40px;text-align:center;color:var(--text-muted);">Loading…</div>
       </div>
-    </div>`;
+`;
 
   try {
     const receipts = await API.get('/api/receipts');
@@ -130,8 +128,7 @@ async function renderNewReceiptForm() {
   const today = new Date().toISOString().split('T')[0];
   window._itemCounter = 0;
 
-  document.getElementById('app').innerHTML = `
-    <div class="main-area" style="padding:24px 28px;">
+  document.getElementById('main-content').innerHTML = `
       <div class="page-header">
         <h1 class="page-title">New Receipt</h1>
         <button class="btn btn-ghost" onclick="renderReceiptsPage()">← Back</button>
@@ -202,7 +199,7 @@ async function renderNewReceiptForm() {
           <button class="btn btn-ghost" onclick="renderReceiptsPage()">Cancel</button>
         </div>
       </div>
-    </div>`;
+`;
 
   DEFAULT_FEE_ITEMS.slice(0, 5).forEach(name => rcptAddPresetRow(name));
   rcptRecalc();
@@ -308,8 +305,7 @@ async function renderReceiptPreview(id, data) {
   const total      = (r.items || []).reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
   const totalWords = numberToWords(Math.floor(total)) + ' Naira Only';
 
-  document.getElementById('app').innerHTML = `
-    <div class="main-area" style="padding:24px 28px;">
+  document.getElementById('main-content').innerHTML = `
       <div class="page-header">
         <h1 class="page-title">Receipt — ${r.receipt_number}</h1>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -342,7 +338,7 @@ async function renderReceiptPreview(id, data) {
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('rcpt-share-modal').style.display='none'">Close</button>
         </div>
       </div>
-    </div>`;
+`;
 }
 
 function buildReceiptCardHTML(r, total, totalWords) {
@@ -398,4 +394,9 @@ function buildReceiptCardHTML(r, total, totalWords) {
           </tr>`).join('')}
         <tr style="background:#1a7a3c;color:#fff;">
           <td colspan="2" style="padding:9px 10px;text-align:center;font-weight:700;font-size:13px;">TOTAL</td>
-          <td style="padding:9px 10px;text-align:right;font-wei
+          <td style="padding:9px 10px;text-align:right;font-weight:700;">${rcptFormatMoney(total)}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="margin-top:8px;font-size:12px;color:#333;font-style:italic;text-align:center;">
+      Total Amount in 
