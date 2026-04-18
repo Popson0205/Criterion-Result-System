@@ -1,4 +1,4 @@
-// ============================================================
+    // ============================================================
 // api.js — replaces sessionStorage DB object with server API calls
 // All functions are async; app.js calls await DB.*()
 // ============================================================
@@ -69,7 +69,6 @@ const DB = {
     return (this._students || []).find(s => s.id === id) || null;
   },
   async saveStudents(students) {
-    // Called with full array — diff against cache and save changed ones
     for (const s of students) {
       await API.post('/api/students', s);
     }
@@ -135,4 +134,10 @@ const DB = {
   async createTeacher(data)       { return API.post('/api/teachers', data); },
   async updateTeacher(id, data)   { return API.put('/api/teachers/' + id, data); },
   async deleteTeacher(id)         { return API.del('/api/teachers/' + id); },
+
+  // ── Bursars (admin only) ──────────────────────────────────
+  async getBursars()              { return API.get('/api/bursars'); },
+  async createBursar(data)        { return API.post('/api/bursars', data); },
+  async updateBursar(id, data)    { return API.put('/api/bursars/' + id, data); },
+  async deleteBursar(id)          { return API.del('/api/bursars/' + id); },
 };
