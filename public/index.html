@@ -1,143 +1,266 @@
-// ============================================================
-// api.js — replaces sessionStorage DB object with server API calls
-// All functions are async; app.js calls await DB.*()
-// ============================================================
+<!DOCTYPE html>
+<html class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Criterion College — Result System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body { background: var(--surface-base); font-family: var(--font-sans); min-height: 100vh; }
 
-const API = {
-  // ── Token management ──────────────────────────────────────
-  getToken() { return sessionStorage.getItem('cc_token'); },
-  getRole()  { return sessionStorage.getItem('cc_role'); },
-  getUser()  { return JSON.parse(sessionStorage.getItem('cc_user') || 'null'); },
-
-  headers() {
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + this.getToken()
-    };
-  },
-
-  async request(method, path, body) {
-    const res = await fetch(path, {
-      method,
-      headers: this.headers(),
-      body: body ? JSON.stringify(body) : undefined
-    });
-    if (res.status === 401) {
-      // Token expired — redirect to login
-      sessionStorage.removeItem('cc_token');
-      sessionStorage.removeItem('cc_role');
-      sessionStorage.removeItem('cc_user');
-      window.location.href = '/';
-      return;
+    /* ── Login / Home ── */
+    .login-screen {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #f0fdf4 0%, #e8f5e9 50%, #f3f4f6 100%);
     }
-    return res.json();
-  },
+    .login-card { width: 420px; padding: 40px; }
+    .login-logo { text-align: center; margin-bottom: 28px; }
+    .login-logo img { width: 90px; height: 90px; object-fit: contain; border-radius: 50%; }
+    .login-school { font-size: 18px; font-weight: 800; color: #1a6e3c; letter-spacing: 1px; margin-top: 10px; }
+    .login-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
-  get(path)         { return this.request('GET', path); },
-  post(path, body)  { return this.request('POST', path, body); },
-  put(path, body)   { return this.request('PUT', path, body); },
-  del(path)         { return this.request('DELETE', path); },
-};
-
-// ── DB object — same interface as original data.js DB ─────────
-// app.js calls these; they now hit the server instead of sessionStorage
-const DB = {
-  // Cache to avoid hammering the server on every render
-  _students: null,
-  _results:  null,
-  _settings: null,
-
-  async init() {
-    [this._students, this._results, this._settings] = await Promise.all([
-      API.get('/api/students'),
-      API.get('/api/results'),
-      API.get('/api/settings'),
-    ]);
-  },
-
-  invalidate() {
-    this._students = null;
-    this._results  = null;
-    this._settings = null;
-  },
-
-  // ── Students ──────────────────────────────────────────────
-  getStudents() {
-    return this._students || [];
-  },
-  getStudent(id) {
-    return (this._students || []).find(s => s.id === id) || null;
-  },
-  async saveStudents(students) {
-    for (const s of students) {
-      await API.post('/api/students', s);
+    /* Role selector */
+    .role-selector { display: flex; gap: 12px; margin-bottom: 24px; }
+    .role-btn {
+      flex: 1; padding: 14px; border: 2px solid var(--border-default); border-radius: 10px;
+      background: var(--surface-primary); cursor: pointer; text-align: center;
+      transition: all 0.2s; font-family: var(--font-sans);
     }
-    this._students = students;
-  },
-  async saveStudent(student) {
-    await API.post('/api/students', student);
-    if (this._students) {
-      const idx = this._students.findIndex(s => s.id === student.id);
-      if (idx >= 0) this._students[idx] = student;
-      else this._students.push(student);
+    .role-btn:hover { border-color: #55A845; background: #f0fdf4; }
+    .role-btn.active { border-color: #55A845; background: #f0fdf4; box-shadow: 0 0 0 3px rgba(85,168,69,0.15); }
+    .role-btn .role-icon { font-size: 28px; margin-bottom: 6px; }
+    .role-btn .role-label { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+    .role-btn .role-desc  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ── App Layout ── */
+    .layout { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 220px; min-height: 100vh; flex-shrink: 0;
+      background: linear-gradient(180deg, #1a6e3c 0%, #145530 100%);
+      display: flex; flex-direction: column; padding: 0;
+      position: sticky; top: 0; height: 100vh;
     }
-  },
-  async deleteStudent(id) {
-    await API.del('/api/students/' + id);
-    if (this._students) this._students = this._students.filter(s => s.id !== id);
-    if (this._results)  this._results  = this._results.filter(r => r.studentId !== id);
-  },
-
-  // ── Results ───────────────────────────────────────────────
-  getResults() {
-    return this._results || [];
-  },
-  getResult(studentId, session, term) {
-    return (this._results || []).find(r =>
-      r.studentId === studentId && r.session === session && r.term === term
-    ) || null;
-  },
-  async saveResults(results) {
-    for (const r of results) {
-      await API.post('/api/results', r);
+    .sidebar-logo {
+      display: flex; align-items: center; gap: 10px;
+      padding: 20px 16px 16px; border-bottom: 1px solid rgba(255,255,255,0.1);
     }
-    this._results = results;
-  },
-  async saveResult(result) {
-    await API.post('/api/results', result);
-    if (this._results) {
-      const idx = this._results.findIndex(r =>
-        r.studentId === result.studentId && r.session === result.session && r.term === result.term
-      );
-      if (idx >= 0) this._results[idx] = result;
-      else this._results.push(result);
+    .sidebar-logo img { width: 38px; height: 38px; border-radius: 50%; object-fit: contain; border: 2px solid rgba(255,255,255,0.3); }
+    .sidebar-school { font-size: 13px; font-weight: 700; color: white; }
+    .sidebar-sub { font-size: 10px; color: rgba(255,255,255,0.6); }
+    .sidebar-nav { flex: 1; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: var(--radius-lg);
+      border: none; background: transparent; color: rgba(255,255,255,0.75);
+      font-size: 13px; font-weight: 500; cursor: pointer; text-align: left; width: 100%;
+      transition: all var(--transition-normal);
     }
-  },
+    .nav-item:hover { background: rgba(255,255,255,0.12); color: white; }
+    .nav-item.active { background: rgba(255,255,255,0.2); color: white; font-weight: 600; }
+    .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+    .logout-btn { margin: 8px; color: rgba(255,255,255,0.5) !important; }
+    .logout-btn:hover { background: rgba(220,38,38,0.2) !important; color: #fca5a5 !important; }
+    .role-badge {
+      font-size: 10px; padding: 2px 8px; border-radius: 99px; font-weight: 700; letter-spacing: 0.5px;
+      background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.9); margin-top: 2px; display: inline-block;
+    }
 
-  // ── Settings ──────────────────────────────────────────────
-  getSettings() {
-    return this._settings || { session:'', term:'', daysInSchool:'', resumptionDate:'', stampImage:'' };
-  },
-  async saveSettings(s) {
-    await API.post('/api/settings', s);
-    this._settings = s;
-  },
+    /* ── Main Area ── */
+    .main-area { flex: 1; padding: 24px 28px; overflow-x: hidden; }
+    .page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+    .page-title { font-size: 22px; font-weight: 800; color: var(--text-primary); }
+    .page-meta { font-size: 13px; color: var(--text-muted); }
 
-  // ── Share tokens ──────────────────────────────────────────
-  async createShareToken(studentId, session, term) {
-    const res = await API.post('/api/share', { studentId, session, term });
-    return res.token;
-  },
+    /* ── Stats ── */
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card { display: flex; align-items: center; gap: 14px; padding: 16px 18px; }
+    .stat-icon { width: 44px; height: 44px; border-radius: var(--radius-lg); display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
+    .stat-val { font-size: 26px; font-weight: 800; color: var(--text-primary); line-height: 1; }
+    .stat-lbl { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
-  // ── Teachers (admin only) ─────────────────────────────────
-  async getTeachers()             { return API.get('/api/teachers'); },
-  async createTeacher(data)       { return API.post('/api/teachers', data); },
-  async updateTeacher(id, data)   { return API.put('/api/teachers/' + id, data); },
-  async deleteTeacher(id)         { return API.del('/api/teachers/' + id); },
+    .section-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .section-title { font-size: 15px; font-weight: 700; color: var(--text-primary); }
 
-  // ── Bursars (admin only) ──────────────────────────────────
-  async getBursars()              { return API.get('/api/bursars'); },
-  async createBursar(data)        { return API.post('/api/bursars', data); },
-  async updateBursar(id, data)    { return API.put('/api/bursars/' + id, data); },
-  async deleteBursar(id)          { return API.del('/api/bursars/' + id); },
-};
+    .class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+    .class-card { padding: 14px 16px; cursor: pointer; }
+    .class-name { font-weight: 700; font-size: 14px; color: #1a6e3c; margin-bottom: 6px; }
+    .class-stats { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-muted); }
+
+    .filter-bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th {
+      background: #55A845; color: white; font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.5px; padding: 10px 14px; text-align: left;
+    }
+    .data-table td { padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); font-size: 13px; vertical-align: middle; }
+    .data-table tr:hover td { background: var(--surface-hover); }
+    .data-table tr:last-child td { border-bottom: none; }
+
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group label { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.4px; }
+
+    .score-inp {
+      width: 70px; text-align: center;
+      padding: 5px 6px; border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+      background: var(--surface-secondary); color: var(--text-primary);
+      font-size: 13px; font-family: var(--font-sans);
+    }
+    .score-inp:focus { outline: none; border-color: #55A845; box-shadow: 0 0 0 2px rgba(85,168,69,0.2); }
+
+    .badge-success { background: #e8f5e9 !important; color: #1a6e3c !important; }
+
+    /* Teacher view — highlight score entry */
+    .teacher-banner {
+      background: linear-gradient(135deg, #1a6e3c, #55A845);
+      color: white; padding: 10px 16px; border-radius: 8px; margin-bottom: 16px;
+      font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px;
+    }
+
+    /* ── ANDROID PORTRAIT & SMALL MOBILE ── */
+    @media (max-width: 600px) {
+
+      /* Layout: stack sidebar on top */
+      .layout { flex-direction: column; min-height: 100vh; }
+
+      /* Sidebar becomes a compact top nav bar */
+      .sidebar {
+        width: 100% !important;
+        min-height: unset !important;
+        height: auto !important;
+        flex-direction: row !important;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        padding: 0 !important;
+        overflow-x: auto;
+      }
+
+      .sidebar-logo {
+        padding: 10px 12px !important;
+        border-bottom: none !important;
+        border-right: 1px solid rgba(255,255,255,0.15);
+        flex-shrink: 0;
+        gap: 6px !important;
+      }
+      .sidebar-logo img { width: 28px !important; height: 28px !important; }
+      .sidebar-school { font-size: 11px !important; }
+      .sidebar-sub { display: none; }
+
+      .sidebar-nav {
+        flex-direction: row !important;
+        flex: 1;
+        padding: 6px 8px !important;
+        gap: 4px !important;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .sidebar-nav::-webkit-scrollbar { display: none; }
+
+      .nav-item {
+        padding: 7px 10px !important;
+        font-size: 12px !important;
+        white-space: nowrap;
+        flex-shrink: 0;
+        width: auto !important;
+        gap: 5px !important;
+      }
+      .nav-icon { font-size: 14px !important; width: auto !important; }
+
+      /* Hide user info & logout from nav bar, show logout as last nav item */
+      .sidebar > div[style*="padding:8px"] { display: none !important; }
+      .logout-btn { margin: 6px 6px 6px 0 !important; flex-shrink: 0; }
+
+      /* Main area full width */
+      .main-area {
+        padding: 12px !important;
+        width: 100%;
+        overflow-x: hidden;
+      }
+
+      /* Page header stacks */
+      .page-header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 8px !important;
+        margin-bottom: 14px !important;
+      }
+      .page-title { font-size: 18px !important; }
+
+      /* Stats: 2 columns */
+      .stats-row { grid-template-columns: repeat(2, 1fr) !important; gap: 10px !important; }
+      .stat-val { font-size: 20px !important; }
+
+      /* Class grid: 2 columns */
+      .class-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+      /* Filter bar stacks */
+      .filter-bar {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 8px !important;
+        padding: 10px 12px !important;
+      }
+      .filter-bar .input,
+      .filter-bar select { width: 100% !important; }
+
+      /* Tables: horizontal scroll */
+      .card { overflow-x: auto !important; padding: 10px !important; }
+      .data-table { min-width: 480px; }
+      .data-table th, .data-table td {
+        padding: 8px 10px !important;
+        font-size: 12px !important;
+      }
+
+      /* Score entry table */
+      .score-inp {
+        width: 52px !important;
+        font-size: 13px !important;
+        padding: 4px !important;
+      }
+
+      /* Inputs: prevent iOS/Android zoom on focus */
+      .input, input, select, textarea {
+        font-size: 16px !important;
+      }
+
+      /* Login card full width */
+      .login-card {
+        width: calc(100% - 24px) !important;
+        padding: 24px 16px !important;
+      }
+      .login-school { font-size: 16px !important; }
+      .role-btn .role-icon { font-size: 22px !important; }
+      .role-btn { padding: 10px 8px !important; }
+
+      /* Buttons */
+      .btn { font-size: 13px !important; }
+    }
+
+    /* ── TABLET (768px) — keep sidebar but narrower ── */
+    @media (min-width: 601px) and (max-width: 900px) {
+      .sidebar { width: 60px !important; }
+      .sidebar-school, .sidebar-sub, .nav-item span:last-child { display: none; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+      .main-area { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script src="theme.js"></script>
+  <script src="logo.js"></script>
+  <script src="api.js"></script>
+  <script src="data.js"></script>
+  <script src="creche_print.js"></script>
+  <script src="print.js"></script>
+  <script src="app.js"></script>
+  <script src="receipts.js"></script>
+</body>
+  </html>
