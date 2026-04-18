@@ -6,7 +6,7 @@ const express  = require('express');
 const cors     = require('cors');
 const jwt      = require('jsonwebtoken');
 const path     = require('path');
-const { initSchema, Users, Students, Results, Settings, ShareTokens, uid } = require('./db');
+const { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, uid } = require('./db');
 
 const app    = express();
 const PORT   = process.env.PORT || 3000;
@@ -36,6 +36,14 @@ function requireAdmin(req, res, next) {
   });
 }
 
+function requireBursar(req, res, next) {
+  requireAuth(req, res, () => {
+    if (req.user.role !== 'admin' && req.user.role !== 'bursar')
+      return res.status(403).json({ error: 'Admin or Bursar only' });
+    next();
+  });
+}
+
 // ── LOGIN ─────────────────────────────────────────────────────
 app.post('/api/login', async (req, res) => {
   try {
@@ -60,7 +68,6 @@ app.get('/api/students', requireAuth, async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── STUDENTS BY CLASS (admin only) ───────────────────────────
 app.get('/api/students/by-class/:classId', requireAdmin, async (req, res) => {
   try {
     const classId = decodeURIComponent(req.params.classId);
@@ -147,6 +154,35 @@ app.delete('/api/teachers/:id', requireAdmin, async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── BURSAR MANAGEMENT (admin only) ───────────────────────────
+app.get('/api/bursars', requireAdmin, async (req, res) => {
+  try { res.json(await Users.listBursars()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/bursars', requireAdmin, async (req, res) => {
+  const { username, password, name } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  try {
+    const existing = await Users.findByUsername(username);
+    if (existing) return res.status(409).json({ error: 'Username already exists' });
+    const user = await Users.createBursar({ username, password, name });
+    res.json(user);
+  } catch (e) {
+    res.status(400).json({ error: e.message || 'Could not create bursar' });
+  }
+});
+
+app.put('/api/bursars/:id', requireAdmin, async (req, res) => {
+  try { await Users.updateBursar(req.params.id, req.body); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/bursars/:id', requireAdmin, async (req, res) => {
+  try { await Users.deleteBursar(req.params.id); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── SHARE TOKENS ──────────────────────────────────────────────
 app.post('/api/share', requireAuth, async (req, res) => {
   try {
@@ -164,6 +200,62 @@ app.get('/api/share/:token', async (req, res) => {
     const result   = await Results.get(share.studentId, share.session, share.term);
     const settings = await Settings.get();
     res.json({ student, result, settings });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ══════════════════════════════════════════════════════════════
+// RECEIPTS
+// ══════════════════════════════════════════════════════════════
+
+app.post('/api/receipts', requireBursar, async (req, res) => {
+  try {
+    const { studentId, session, term, date, items, payment_method, to_balance, bursar_name } = req.body;
+    if (!studentId || !session || !term || !date || !items)
+      return res.status(400).json({ error: 'Missing required fields' });
+    const receipt = await Receipts.create({
+      studentId, session, term, date, items,
+      payment_method: payment_method || '',
+      to_balance:     to_balance || '',
+      bursar_name:    bursar_name || req.user.name || '',
+      createdBy:      req.user.id
+    });
+    res.json(receipt);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/receipts', requireBursar, async (req, res) => {
+  try { res.json(await Receipts.list()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/receipts/:id', requireBursar, async (req, res) => {
+  try {
+    const r = await Receipts.get(req.params.id);
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    res.json(r);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/receipts/:id/share', requireBursar, async (req, res) => {
+  try {
+    const r = await Receipts.get(req.params.id);
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    const token = r.share_token || await Receipts.generateToken(req.params.id);
+    const url   = `${req.protocol}://${req.get('host')}/receipt-view.html?token=${token}`;
+    res.json({ token, url });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/receipts/:id', requireAdmin, async (req, res) => {
+  try { await Receipts.delete(req.params.id); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/receipt-public/:token', async (req, res) => {
+  try {
+    const r = await Receipts.getByToken(req.params.token);
+    if (!r) return res.status(404).json({ error: 'Receipt not found or link expired' });
+    res.json(r);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
