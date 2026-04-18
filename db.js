@@ -16,7 +16,7 @@ async function initSchema() {
       id        TEXT PRIMARY KEY,
       username  TEXT UNIQUE NOT NULL,
       password  TEXT NOT NULL,
-      role      TEXT NOT NULL CHECK(role IN ('admin','teacher')),
+      role      TEXT NOT NULL CHECK(role IN ('admin','teacher','bursar')),
       name      TEXT,
       "createdAt" TIMESTAMPTZ DEFAULT NOW()
     );
@@ -61,6 +61,22 @@ async function initSchema() {
       term        TEXT NOT NULL,
       "createdAt" TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS receipts (
+      id             TEXT PRIMARY KEY,
+      receipt_number TEXT UNIQUE NOT NULL,
+      "studentId"    TEXT NOT NULL,
+      session        TEXT NOT NULL,
+      term           TEXT NOT NULL,
+      date           TEXT NOT NULL,
+      items          TEXT NOT NULL DEFAULT '[]',
+      payment_method TEXT DEFAULT '',
+      to_balance     TEXT DEFAULT '',
+      bursar_name    TEXT DEFAULT '',
+      share_token    TEXT DEFAULT '',
+      "createdBy"    TEXT NOT NULL,
+      "createdAt"    TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
 
   // Seed default admin
@@ -78,6 +94,23 @@ async function initSchema() {
   if (sRows.length === 0) {
     await pool.query("INSERT INTO settings (id) VALUES (1)");
   }
+
+  // Auto-migration: update role CHECK for existing deployments
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'users_role_check'
+        AND conrelid = 'users'::regclass
+      ) THEN
+        ALTER TABLE users DROP CONSTRAINT users_role_check;
+        ALTER TABLE users ADD CONSTRAINT users_role_check
+          CHECK (role IN ('admin', 'teacher', 'bursar'));
+      END IF;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END$$;
+  `).catch(() => {});
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -101,6 +134,12 @@ const Users = {
     );
     return rows;
   },
+  listBursars: async () => {
+    const { rows } = await pool.query(
+      "SELECT id,username,role,name,\"createdAt\" FROM users WHERE role='bursar' ORDER BY name"
+    );
+    return rows;
+  },
   create: async ({ username, password, name }) => {
     const hash = bcrypt.hashSync(password, 10);
     const id   = 'usr_' + uid();
@@ -109,6 +148,15 @@ const Users = {
       [id, username, hash, name || username]
     );
     return { id, username, role: 'teacher', name: name || username };
+  },
+  createBursar: async ({ username, password, name }) => {
+    const hash = bcrypt.hashSync(password, 10);
+    const id   = 'usr_' + uid();
+    await pool.query(
+      "INSERT INTO users (id,username,password,role,name) VALUES ($1,$2,$3,'bursar',$4)",
+      [id, username, hash, name || username]
+    );
+    return { id, username, role: 'bursar', name: name || username };
   },
   update: async (id, { username, password, name }) => {
     if (password) {
@@ -124,8 +172,25 @@ const Users = {
       );
     }
   },
+  updateBursar: async (id, { username, password, name }) => {
+    if (password) {
+      const hash = bcrypt.hashSync(password, 10);
+      await pool.query(
+        "UPDATE users SET username=$1,password=$2,name=$3 WHERE id=$4 AND role='bursar'",
+        [username, hash, name, id]
+      );
+    } else {
+      await pool.query(
+        "UPDATE users SET username=$1,name=$2 WHERE id=$3 AND role='bursar'",
+        [username, name, id]
+      );
+    }
+  },
   delete: async (id) => {
     await pool.query("DELETE FROM users WHERE id=$1 AND role='teacher'", [id]);
+  },
+  deleteBursar: async (id) => {
+    await pool.query("DELETE FROM users WHERE id=$1 AND role='bursar'", [id]);
   },
   verifyPassword: (user, password) => bcrypt.compareSync(password, user.password),
 };
@@ -263,4 +328,81 @@ const ShareTokens = {
   },
 };
 
-module.exports = { pool, initSchema, Users, Students, Results, Settings, ShareTokens, uid };
+// ── Receipts ──────────────────────────────────────────────────
+const Receipts = {
+
+  async getNextNumber(session) {
+    const year = session ? session.split('/')[0] : new Date().getFullYear().toString();
+    const { rows } = await pool.query(
+      `SELECT receipt_number FROM receipts
+       WHERE receipt_number LIKE $1
+       ORDER BY receipt_number DESC LIMIT 1`,
+      [`RCP-${year}-%`]
+    );
+    if (rows.length === 0) return `RCP-${year}-0001`;
+    const last = rows[0].receipt_number;
+    const seq  = parseInt(last.split('-')[2], 10) + 1;
+    return `RCP-${year}-${String(seq).padStart(4, '0')}`;
+  },
+
+  async create({ studentId, session, term, date, items, payment_method, to_balance, bursar_name, createdBy }) {
+    const id             = 'rcp_' + uid();
+    const receipt_number = await Receipts.getNextNumber(session);
+    await pool.query(
+      `INSERT INTO receipts
+        (id, receipt_number, "studentId", session, term, date, items, payment_method, to_balance, bursar_name, "createdBy")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id, receipt_number, studentId, session, term, date,
+       JSON.stringify(items), payment_method || '', to_balance || '', bursar_name || '', createdBy]
+    );
+    return Receipts.get(id);
+  },
+
+  async list() {
+    const { rows } = await pool.query(
+      `SELECT r.*, s.name as "studentName", s."classId"
+       FROM receipts r
+       LEFT JOIN students s ON s.id = r."studentId"
+       ORDER BY r."createdAt" DESC`
+    );
+    return rows.map(r => ({ ...r, items: JSON.parse(r.items || '[]') }));
+  },
+
+  async get(id) {
+    const { rows } = await pool.query(
+      `SELECT r.*, s.name as "studentName", s."classId"
+       FROM receipts r
+       LEFT JOIN students s ON s.id = r."studentId"
+       WHERE r.id = $1`,
+      [id]
+    );
+    if (!rows[0]) return null;
+    const r = rows[0];
+    return { ...r, items: JSON.parse(r.items || '[]') };
+  },
+
+  async getByToken(token) {
+    const { rows } = await pool.query(
+      `SELECT r.*, s.name as "studentName", s."classId"
+       FROM receipts r
+       LEFT JOIN students s ON s.id = r."studentId"
+       WHERE r.share_token = $1`,
+      [token]
+    );
+    if (!rows[0]) return null;
+    const r = rows[0];
+    return { ...r, items: JSON.parse(r.items || '[]') };
+  },
+
+  async generateToken(id) {
+    const token = uid() + uid();
+    await pool.query(`UPDATE receipts SET share_token = $1 WHERE id = $2`, [token, id]);
+    return token;
+  },
+
+  async delete(id) {
+    await pool.query(`DELETE FROM receipts WHERE id = $1`, [id]);
+  },
+};
+
+module.exports = { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, uid };
