@@ -39,6 +39,13 @@ function rcptFormatMoney(val) {
   return '₦' + n.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Determine payment status label
+function rcptPaymentStatus(total, balance) {
+  const bal = parseFloat(balance) || 0;
+  if (bal > 0) return 'PART PAYMENT';
+  return 'FULL PAYMENT';
+}
+
 // ── Receipts List Page ───────────────────────────────────────
 async function renderReceiptsPage() {
   const canCreate = isAdmin() || API.getRole() === 'bursar';
@@ -121,7 +128,6 @@ function renderReceiptsTable(receipts) {
 }
 
 // ── Student search dropdown helper ───────────────────────────
-// Replaces the plain <select> with a searchable input+dropdown
 function rcptInitStudentSearch(students) {
   window._rcptStudents = students.sort((a, b) => a.name.localeCompare(b.name));
   window._rcptSelectedStudentId = '';
@@ -176,7 +182,6 @@ function rcptFilterStudents(q) {
     : all;
   rcptRenderDropdown(filtered);
   rcptShowDropdown();
-  // Clear selection if user is typing again
   document.getElementById('r-student').value = '';
   window._rcptSelectedStudentId = '';
 }
@@ -184,13 +189,6 @@ function rcptFilterStudents(q) {
 function rcptShowDropdown() {
   const dd = document.getElementById('student-dropdown');
   if (dd) dd.style.display = 'block';
-}
-
-function rcptHideDropdown() {
-  setTimeout(() => {
-    const dd = document.getElementById('student-dropdown');
-    if (dd) dd.style.display = 'none';
-  }, 200);
 }
 
 function rcptSelectStudent(id, label) {
@@ -268,8 +266,8 @@ async function renderNewReceiptForm() {
             </label>`).join('')}
         </div>
         <div class="form-group" style="max-width:200px;">
-          <label>To Balance (₦)</label>
-          <input type="number" id="r-balance" class="input" placeholder="0.00" min="0" step="0.01">
+          <label>To Balance (₦) <span style="font-size:11px;color:#888;font-weight:400;">(leave 0 for full payment)</span></label>
+          <input type="number" id="r-balance" class="input" placeholder="0.00" min="0" step="0.01" value="0">
         </div>
 
         <div style="margin-top:20px;display:flex;gap:10px;">
@@ -280,7 +278,6 @@ async function renderNewReceiptForm() {
 `;
 
   rcptInitStudentSearch(students);
-  // Close dropdown when clicking outside
   document.addEventListener('click', function _outsideClick(e) {
     if (!e.target.closest('#student-search-wrap')) {
       const dd = document.getElementById('student-dropdown');
@@ -389,7 +386,6 @@ async function renderReceiptPreview(id, data) {
     catch(e) { alert('Could not load receipt: ' + e.message); return; }
   }
 
-  // Fetch student passport if not already on the receipt object
   if (!r.passport && r.studentId) {
     try {
       const students = await API.get('/api/students');
@@ -407,8 +403,8 @@ async function renderReceiptPreview(id, data) {
         <h1 class="page-title">Receipt — ${r.receipt_number}</h1>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-ghost" onclick="renderReceiptsPage()">← Back</button>
-          <button class="btn btn-secondary" onclick="shareReceipt('${r.id}')">🔗 Share</button>
-          <button class="btn btn-primary" onclick="rcptPrint('${r.id}')">🖨️ Print / PDF</button>
+          <button class="btn btn-secondary" onclick="shareReceipt('${r.id}')">🔗 Share Link</button>
+          <button class="btn btn-primary" onclick="rcptPrint('${r.id}','${(r.studentName||'').replace(/'/g,"\\'")}','${r.term||''}','${r.session||''}','${r.to_balance||'0'}')">📄 Export PDF</button>
         </div>
       </div>
 
@@ -416,72 +412,77 @@ async function renderReceiptPreview(id, data) {
         ${buildReceiptCardHTML(r, total, totalWords, settings)}
       </div>
 
-      <!-- Share Modal -->
+      <!-- Share Modal — link only, no WhatsApp/print buttons -->
       <div id="rcpt-share-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;
         background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
         <div style="background:#fff;border-radius:12px;padding:28px;max-width:440px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
-          <h3 style="margin:0 0 12px;color:#1a6e3c;">🔗 Share Receipt</h3>
-          <p style="font-size:13px;color:#555;margin-bottom:14px;">Copy the link or share directly via WhatsApp</p>
+          <h3 style="margin:0 0 8px;color:#1a6e3c;">🔗 Receipt Link</h3>
+          <p style="font-size:13px;color:#555;margin-bottom:14px;">Share this link — recipient can view the receipt only (no print/share buttons shown)</p>
           <div style="display:flex;gap:8px;margin-bottom:16px;">
             <input id="rcpt-share-link" type="text" readonly class="input"
               style="flex:1;font-size:12px;background:#f9f9f9;">
             <button class="btn btn-primary btn-sm" onclick="rcptCopyLink()">Copy</button>
           </div>
-          <a id="rcpt-whatsapp-btn" href="#" target="_blank"
-            style="display:inline-block;background:#25D366;color:#fff;padding:10px 24px;
-            border-radius:8px;text-decoration:none;font-weight:600;margin-bottom:14px;">
-            📲 Share on WhatsApp
-          </a><br>
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('rcpt-share-modal').style.display='none'">Close</button>
         </div>
       </div>
 `;
 }
 
-// ── Print / PDF export (opens a clean printable window) ──────
-function rcptPrint(id) {
+// ── PDF Export — exact receipt clone, auto-named, auto-prints ─
+function rcptPrint(id, studentName, term, session, balance) {
   const card = document.getElementById('receipt-printable');
-  if (!card) { window.print(); return; }
+  if (!card) return;
+
+  // Build filename: StudentName_Term_Session_FullPayment or PartPayment
+  const bal     = parseFloat(balance) || 0;
+  const status  = bal > 0 ? 'PartPayment' : 'FullPayment';
+  const safeName = (studentName || 'Receipt').replace(/[^a-zA-Z0-9]/g, '_');
+  const safeTerm = (term || '').replace(/\s+/g, '_');
+  const safeSess = (session || '').replace(/\//g, '-');
+  const filename = `${safeName}_${safeTerm}_${safeSess}_${status}`;
+
   const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8"/>
-  <title>Receipt — Criterion College</title>
+  <title>${filename}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; background: #fff; padding: 20px; }
-    @media print {
-      body { padding: 0; }
-      .no-print { display: none !important; }
-    }
+    body { font-family: Arial, sans-serif; background: #fff; }
+    @page { size: A4; margin: 15mm; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
   </style>
+  <script>
+    window.onload = function() {
+      // Set suggested filename via document title (browsers use this for Save As PDF)
+      document.title = '${filename}';
+      setTimeout(function() { window.print(); }, 400);
+    };
+  <\/script>
 </head>
 <body>
-  <div class="no-print" style="margin-bottom:16px;">
-    <button onclick="window.print()" style="padding:8px 20px;background:#1a6e3c;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">🖨️ Print / Save PDF</button>
-  </div>
   ${card.innerHTML}
 </body>
 </html>`;
+
   const win = window.open('', '_blank');
   win.document.write(html);
   win.document.close();
-  setTimeout(() => win.print(), 500);
 }
 
 // ── Receipt Card HTML ─────────────────────────────────────────
 function buildReceiptCardHTML(r, total, totalWords, settings) {
   settings = settings || {};
-  const logoHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
-    ? `<img src="${SCHOOL_LOGO}" style="width:60px;height:60px;object-fit:contain;border-radius:50%;">`
-    : `<div style="width:60px;height:60px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:20px;">CC</div>`;
 
-  // Student passport
+  const logoHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
+    ? `<img src="${SCHOOL_LOGO}" style="width:70px;height:70px;object-fit:contain;border-radius:50%;border:2px solid #1a6e3c;">`
+    : `<div style="width:70px;height:70px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:24px;">CC</div>`;
+
   const passportHTML = r.passport
     ? `<img src="${r.passport}" style="width:70px;height:80px;object-fit:cover;border-radius:4px;border:2px solid #1a6e3c;display:block;" />`
     : `<div style="width:70px;height:80px;background:#e8f5e9;border-radius:4px;border:2px solid #1a6e3c;display:flex;align-items:center;justify-content:center;font-size:28px;">👤</div>`;
 
-  // Stamp as bursar signature
   const stampHTML = settings.stampImage
     ? `<img src="${settings.stampImage}" style="width:90px;height:90px;object-fit:contain;display:block;margin:0 auto;" />`
     : `<div style="width:90px;height:40px;"></div>`;
@@ -490,18 +491,35 @@ function buildReceiptCardHTML(r, total, totalWords, settings) {
   const selectedMethods = (r.payment_method || '').split(',').map(m => m.trim());
   const filledRows      = r.items || [];
   const blankCount      = Math.max(0, 5 - filledRows.length);
+  const balance         = parseFloat(r.to_balance) || 0;
+  const payStatus       = rcptPaymentStatus(total, balance);
+  const payStatusColor  = balance > 0 ? '#dc2626' : '#1a6e3c';
 
   return `
-    <!-- Header -->
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-      <div style="display:flex;align-items:center;gap:12px;">
-        ${logoHTML}
-        <div>
-          <div style="font-size:18px;font-weight:800;color:#1a6e3c;letter-spacing:0.5px;">CRITERION COLLEGE, OSOGBO</div>
-          <div style="background:#222;color:#fff;font-weight:700;font-size:12px;padding:2px 12px;border-radius:4px;display:inline-block;margin-top:3px;">08063224872</div>
-        </div>
+    <!-- Header: Logo centred, school name centred, passport top-right -->
+    <div style="display:flex;align-items:flex-start;margin-bottom:10px;">
+      <!-- Left spacer same width as passport to balance layout -->
+      <div style="width:80px;flex-shrink:0;"></div>
+
+      <!-- Centre: logo + school name -->
+      <div style="flex:1;text-align:center;">
+        <div style="display:inline-block;">${logoHTML}</div>
+        <div style="font-size:18px;font-weight:900;color:#1a6e3c;letter-spacing:0.5px;margin-top:6px;text-transform:uppercase;">CRITERION COLLEGE, OSOGBO</div>
+        <div style="background:#222;color:#fff;font-weight:700;font-size:12px;padding:2px 14px;border-radius:4px;display:inline-block;margin-top:4px;">08063224872</div>
       </div>
-      <div style="text-align:center;">${passportHTML}<div style="font-size:10px;color:#888;margin-top:3px;">Student Photo</div></div>
+
+      <!-- Right: student passport -->
+      <div style="width:80px;flex-shrink:0;text-align:center;">
+        ${passportHTML}
+        <div style="font-size:10px;color:#888;margin-top:3px;">Student Photo</div>
+      </div>
+    </div>
+
+    <!-- Payment status banner -->
+    <div style="text-align:center;margin-bottom:6px;">
+      <span style="font-size:13px;font-weight:800;color:#fff;background:${payStatusColor};padding:3px 18px;border-radius:4px;letter-spacing:1px;">
+        ${payStatus}
+      </span>
     </div>
 
     <div style="text-align:center;font-size:12px;text-decoration:underline;color:#333;margin-bottom:6px;font-weight:700;">CASH RECEIPT</div>
@@ -551,18 +569,19 @@ function buildReceiptCardHTML(r, total, totalWords, settings) {
       Total Amount in Words: <strong>${totalWords}</strong>
     </div>
 
-    <div style="margin-top:12px;display:flex;gap:20px;flex-wrap:wrap;font-size:12px;">
-      ${methods.map(m => `
-        <label style="display:flex;align-items:center;gap:5px;">
-          <span style="display:inline-block;width:14px;height:14px;border:2px solid #333;border-radius:2px;background:${selectedMethods.includes(m)?'#1a6e3c':'#fff'};"></span>
-          ${m}
-        </label>`).join('')}
+    <div style="margin-top:10px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;font-size:12px;">
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        ${methods.map(m => `
+          <label style="display:flex;align-items:center;gap:5px;">
+            <span style="display:inline-block;width:14px;height:14px;border:2px solid #333;border-radius:2px;background:${selectedMethods.includes(m)?'#1a6e3c':'#fff'};"></span>
+            ${m}
+          </label>`).join('')}
+      </div>
+      ${balance > 0 ? `
+      <div style="margin-left:auto;font-size:13px;font-weight:700;color:#dc2626;">
+        Balance Due: ${rcptFormatMoney(balance)}
+      </div>` : ''}
     </div>
-
-    ${r.to_balance && parseFloat(r.to_balance) > 0 ? `
-    <div style="margin-top:6px;font-size:13px;">
-      To Balance: <strong>${rcptFormatMoney(r.to_balance)}</strong>
-    </div>` : ''}
 
     <!-- Signatures -->
     <div style="margin-top:24px;display:flex;justify-content:space-between;align-items:flex-end;font-size:12px;">
@@ -584,30 +603,24 @@ function buildReceiptCardHTML(r, total, totalWords, settings) {
   `;
 }
 
-// ── Share receipt — auto-generates link with student name ─────
+// ── Share receipt — view-only link (no print/share on destination) ─
 async function shareReceipt(id) {
   try {
     const res = await API.post(`/api/receipts/${id}/share`, {});
-    // Build URL with student name slug for readability
     let url = res.url;
-    if (res.url && !res.url.includes('student=')) {
-      // Try to get student name from already-loaded receipt data
-      const allReceipts = window._allReceipts || [];
-      const rcpt = allReceipts.find(r => r.id === id);
-      if (rcpt && rcpt.studentName) {
-        const slug = rcpt.studentName.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
-        url = res.url + '&student=' + encodeURIComponent(slug);
-      }
+    // Append student name slug for readable URL
+    const allReceipts = window._allReceipts || [];
+    const rcpt = allReceipts.find(r => r.id === id);
+    if (rcpt && rcpt.studentName) {
+      const slug = rcpt.studentName.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
+      if (!url.includes('student=')) url = url + '&student=' + encodeURIComponent(slug);
     }
 
     const modal = document.getElementById('rcpt-share-modal');
     if (modal) {
       document.getElementById('rcpt-share-link').value = url;
-      const wa = document.getElementById('rcpt-whatsapp-btn');
-      if (wa) wa.href = `https://wa.me/?text=${encodeURIComponent('View receipt: ' + url)}`;
       modal.style.display = 'flex';
     } else {
-      // Auto-copy and show minimal prompt
       navigator.clipboard.writeText(url).catch(() => {});
       prompt('Share this link:', url);
     }
@@ -620,10 +633,8 @@ function rcptCopyLink() {
   const inp = document.getElementById('rcpt-share-link');
   if (inp) {
     inp.select();
-    navigator.clipboard.writeText(inp.value).catch(() => {
-      document.execCommand('copy');
-    });
-    const btn = document.querySelector('#rcpt-share-modal button.btn-primary');
+    navigator.clipboard.writeText(inp.value).catch(() => { document.execCommand('copy'); });
+    const btn = document.querySelector('#rcpt-share-modal .btn-primary');
     if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = 'Copy'; }, 1500); }
   }
 }
