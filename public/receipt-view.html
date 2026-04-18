@@ -52,6 +52,7 @@
   </div>
 </div>
 
+<script src="logo.js"></script>
 <script>
   function numToWords(n) {
     const a = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',
@@ -72,7 +73,8 @@
   }
 
   async function load() {
-    const token = new URLSearchParams(window.location.search).get('token');
+    const params = new URLSearchParams(window.location.search);
+    const token  = params.get('token');
     if (!token) {
       document.getElementById('receipt-card').innerHTML = '<p class="error">Invalid receipt link.</p>';
       return;
@@ -81,7 +83,17 @@
       const res = await fetch('/api/receipt-public/' + token);
       if (!res.ok) {
         const err = await res.json();
-        document.getElementById('receipt-card').innerHTML = `<p class="error">${err.error || 'Receipt not found.'}</p>`;
+        // Inject school logo
+    const logoWrap = document.getElementById('rcpt-logo-wrap');
+    if (logoWrap) {
+      if (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO) {
+        logoWrap.innerHTML = `<img src="${SCHOOL_LOGO}" style="width:65px;height:65px;object-fit:contain;border-radius:50%;">`;
+      } else {
+        logoWrap.innerHTML = `<div style="width:65px;height:65px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:22px;">CC</div>`;
+      }
+    }
+
+    document.getElementById('receipt-card').innerHTML = `<p class="error">${err.error || 'Receipt not found.'}</p>`;
         return;
       }
       render(await res.json());
@@ -98,15 +110,31 @@
     const filled     = r.items||[];
     const blanks     = Math.max(0, 5 - filled.length);
 
+    // Passport
+    const passportHTML = r.passport
+      ? `<img src="${r.passport}" style="width:70px;height:80px;object-fit:cover;border-radius:4px;border:2px solid #1a6e3c;display:block;" />`
+      : `<div style="width:70px;height:80px;background:#e8f5e9;border-radius:4px;border:2px solid #1a6e3c;display:flex;align-items:center;justify-content:center;font-size:28px;">👤</div>`;
+
+    // Stamp as bursar signature
+    const stampHTML = r.stampImage
+      ? `<img src="${r.stampImage}" style="width:90px;height:90px;object-fit:contain;display:block;margin:0 auto;" />`
+      : `<div style="width:90px;height:40px;"></div>`;
+
     document.getElementById('receipt-card').innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:8px;">
-        <div style="width:60px;height:60px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:20px;">CC</div>
-        <div style="text-align:center;">
-          <div style="font-size:20px;font-weight:800;color:#1a6e3c;">CRITERION COLLEGE, OSOGBO</div>
-          <div style="background:#222;color:#fff;font-weight:700;font-size:13px;padding:3px 16px;border-radius:4px;display:inline-block;margin-top:4px;">08063224872</div>
+      <!-- Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div id="rcpt-logo-wrap" style="flex-shrink:0;"></div>
+          <div>
+            <div style="font-size:18px;font-weight:800;color:#1a6e3c;">CRITERION COLLEGE, OSOGBO</div>
+            <div style="background:#222;color:#fff;font-weight:700;font-size:12px;padding:2px 12px;border-radius:4px;display:inline-block;margin-top:3px;">08063224872</div>
+          </div>
         </div>
+        <div style="text-align:center;">${passportHTML}<div style="font-size:10px;color:#888;margin-top:3px;">Student Photo</div></div>
       </div>
-      <div style="text-align:center;font-size:12px;text-decoration:underline;color:#333;margin-bottom:6px;">Cash Receipt</div>
+
+      <div style="text-align:center;font-size:12px;text-decoration:underline;color:#333;margin-bottom:6px;font-weight:700;">CASH RECEIPT</div>
+
       <div style="display:flex;justify-content:space-between;font-size:13px;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:10px;">
         <span>Receipt No: <strong style="color:#1a6e3c;">${r.receipt_number}</strong></span>
         <span>Date: <strong>${r.date||''}</strong></span>
@@ -114,10 +142,11 @@
       <div style="font-size:13px;margin-bottom:4px;">
         Name: <span style="border-bottom:1px solid #333;display:inline-block;min-width:260px;padding-bottom:2px;"><strong>${r.studentName||''}</strong></span>
       </div>
-      <div style="display:flex;gap:40px;font-size:13px;margin-bottom:12px;">
+      <div style="display:flex;gap:40px;font-size:13px;margin-bottom:10px;">
         <span>Class: <span style="border-bottom:1px solid #333;display:inline-block;min-width:100px;"><strong>${r.classId||''}</strong></span></span>
         <span>Session: <strong>${r.session||''}</strong> | Term: <strong>${r.term||''}</strong></span>
       </div>
+
       <table style="width:100%;border-collapse:collapse;">
         <thead>
           <tr style="background:#1a7a3c;color:#fff;">
@@ -145,8 +174,9 @@
           </tr>
         </tbody>
       </table>
-      <div style="margin-top:10px;font-size:12px;color:#1a7a3c;">
-        Total amount in words: <span style="border-bottom:1px solid #555;display:inline-block;min-width:300px;">${totalWords}</span>
+
+      <div style="margin-top:8px;font-size:12px;color:#333;font-style:italic;text-align:center;">
+        Total Amount in Words: <strong>${totalWords}</strong>
       </div>
       <div style="margin-top:12px;display:flex;gap:22px;font-size:12px;flex-wrap:wrap;">
         ${methods.map(m=>`
@@ -156,27 +186,40 @@
             ${m}
           </label>`).join('')}
       </div>
-      <div style="margin-top:8px;font-size:12px;">
-        To balance: <span style="border-bottom:1px solid #555;display:inline-block;min-width:200px;">
-          ${r.to_balance&&parseFloat(r.to_balance)>0?fmt(r.to_balance):''}
-        </span>
+      ${r.to_balance && parseFloat(r.to_balance) > 0 ? `
+      <div style="margin-top:6px;font-size:13px;">
+        To Balance: <strong>${fmt(r.to_balance)}</strong>
+      </div>` : ''}
+
+      <!-- Signatures -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:24px;padding-top:12px;">
+        <div style="text-align:center;font-size:12px;">
+          <div style="border-top:1px solid #333;width:160px;padding-top:4px;">Parent/Guardian Signature</div>
+        </div>
+        <div style="text-align:center;font-size:12px;">
+          ${stampHTML}
+          <div style="border-top:1px solid #333;width:160px;padding-top:4px;margin-top:4px;">${r.bursar_name||'Bursar'}</div>
+          <div style="font-size:10px;color:#888;margin-top:2px;">Authorised Signatory</div>
+        </div>
       </div>
-      <div style="display:flex;justify-content:space-between;margin-top:32px;padding-top:12px;">
-        <div style="text-align:center;font-size:12px;">
-          <div style="border-top:1px solid #333;width:160px;padding-top:4px;">Payer's Signature</div>
-        </div>
-        <div style="text-align:center;font-size:12px;">
-          <div style="border-top:1px solid #333;width:160px;padding-top:4px;">${r.bursar_name||'Bursar'}</div>
-        </div>
+
+      <div style="margin-top:14px;text-align:center;font-size:11px;color:#888;border-top:1px dashed #ccc;padding-top:8px;">
+        This receipt is computer generated. Please keep it safe.
       </div>`;
 
     document.getElementById('action-bar').style.display = 'flex';
-    const msg = encodeURIComponent(`Criterion College Receipt (${r.receipt_number}):\n${window.location.href}`);
+
+    // Set page title with student name
+    const studentSlug = (r.studentName || '').trim();
+    document.title = `Receipt ${r.receipt_number} — ${studentSlug} | Criterion College`;
+
+    // WhatsApp message includes student name
+    const shareUrl = window.location.href;
+    const msg = encodeURIComponent(`Criterion College Receipt for ${studentSlug} (${r.receipt_number}):\n${shareUrl}`);
     document.getElementById('wa-btn').href = `https://wa.me/?text=${msg}`;
-    document.title = `Receipt ${r.receipt_number} — ${r.studentName||''} | Criterion College`;
   }
 
   load();
 </script>
 </body>
-  </html>
+</html>
