@@ -360,7 +360,7 @@ const Receipts = {
 
   async list() {
     const { rows } = await pool.query(
-      `SELECT r.*, s.name as "studentName", s."classId"
+      `SELECT r.*, s.name as "studentName", s."classId", s.passport
        FROM receipts r
        LEFT JOIN students s ON s.id = r."studentId"
        ORDER BY r."createdAt" DESC`
@@ -370,7 +370,8 @@ const Receipts = {
 
   async get(id) {
     const { rows } = await pool.query(
-      `SELECT r.*, s.name as "studentName", s."classId"
+      `SELECT r.*, s.name as "studentName", s."classId", s.passport,
+              (SELECT "stampImage" FROM settings WHERE id=1) as "stampImage"
        FROM receipts r
        LEFT JOIN students s ON s.id = r."studentId"
        WHERE r.id = $1`,
@@ -383,7 +384,8 @@ const Receipts = {
 
   async getByToken(token) {
     const { rows } = await pool.query(
-      `SELECT r.*, s.name as "studentName", s."classId"
+      `SELECT r.*, s.name as "studentName", s."classId", s.passport,
+              (SELECT "stampImage" FROM settings WHERE id=1) as "stampImage"
        FROM receipts r
        LEFT JOIN students s ON s.id = r."studentId"
        WHERE r.share_token = $1`,
