@@ -1,6 +1,5 @@
 // ============================================================
 // receipts.js — Criterion College Receipt Module
-// Drop into: public/receipts.js
 // ============================================================
 
 const DEFAULT_FEE_ITEMS = [
@@ -121,6 +120,87 @@ function renderReceiptsTable(receipts) {
     </table>`;
 }
 
+// ── Student search dropdown helper ───────────────────────────
+// Replaces the plain <select> with a searchable input+dropdown
+function rcptInitStudentSearch(students) {
+  window._rcptStudents = students.sort((a, b) => a.name.localeCompare(b.name));
+  window._rcptSelectedStudentId = '';
+
+  const wrap = document.getElementById('student-search-wrap');
+  if (!wrap) return;
+
+  wrap.innerHTML = `
+    <div style="position:relative;">
+      <input id="student-search-input" type="text" class="input" autocomplete="off"
+        placeholder="Type to search student…"
+        oninput="rcptFilterStudents(this.value)"
+        onfocus="rcptShowDropdown()"
+        style="width:100%;" />
+      <input type="hidden" id="r-student" value="" />
+      <div id="student-dropdown" style="
+        display:none;position:absolute;top:100%;left:0;right:0;
+        background:#fff;border:1.5px solid #55A845;border-top:none;
+        border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;
+        z-index:200;box-shadow:0 6px 20px rgba(0,0,0,0.12);"></div>
+    </div>`;
+
+  rcptRenderDropdown(window._rcptStudents);
+}
+
+function rcptRenderDropdown(list) {
+  const dd = document.getElementById('student-dropdown');
+  if (!dd) return;
+  if (!list.length) {
+    dd.innerHTML = `<div style="padding:10px 14px;color:var(--text-muted);font-size:13px;">No students found</div>`;
+    return;
+  }
+  dd.innerHTML = list.map(s => `
+    <div onclick="rcptSelectStudent('${s.id}','${s.name.replace(/'/g,"\\'")} (${s.classId})')"
+      style="padding:9px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f0f0f0;"
+      onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background='#fff'">
+      ${s.passport
+        ? `<img src="${s.passport}" style="width:30px;height:34px;object-fit:cover;border-radius:3px;border:1px solid #55A845;flex-shrink:0;" />`
+        : `<div style="width:30px;height:34px;background:#e8f5e9;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;">👤</div>`}
+      <div>
+        <div style="font-weight:600;color:#111;">${s.name}</div>
+        <div style="font-size:11px;color:#888;">${s.classId}</div>
+      </div>
+    </div>`).join('');
+}
+
+function rcptFilterStudents(q) {
+  const all = window._rcptStudents || [];
+  const lq  = q.toLowerCase();
+  const filtered = q
+    ? all.filter(s => s.name.toLowerCase().includes(lq) || s.classId.toLowerCase().includes(lq))
+    : all;
+  rcptRenderDropdown(filtered);
+  rcptShowDropdown();
+  // Clear selection if user is typing again
+  document.getElementById('r-student').value = '';
+  window._rcptSelectedStudentId = '';
+}
+
+function rcptShowDropdown() {
+  const dd = document.getElementById('student-dropdown');
+  if (dd) dd.style.display = 'block';
+}
+
+function rcptHideDropdown() {
+  setTimeout(() => {
+    const dd = document.getElementById('student-dropdown');
+    if (dd) dd.style.display = 'none';
+  }, 200);
+}
+
+function rcptSelectStudent(id, label) {
+  document.getElementById('r-student').value = id;
+  document.getElementById('student-search-input').value = label;
+  window._rcptSelectedStudentId = id;
+  const dd = document.getElementById('student-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+
 // ── New Receipt Form ─────────────────────────────────────────
 async function renderNewReceiptForm() {
   let students = [];
@@ -137,15 +217,12 @@ async function renderNewReceiptForm() {
 
       <div class="card" style="max-width:680px;">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+
           <div class="form-group" style="grid-column:1/-1;">
             <label>Student *</label>
-            <select id="r-student" class="input" required>
-              <option value="">— Select student —</option>
-              ${students.sort((a,b)=>a.name.localeCompare(b.name)).map(s =>
-                `<option value="${s.id}" data-class="${s.classId}">${s.name} (${s.classId})</option>`
-              ).join('')}
-            </select>
+            <div id="student-search-wrap"></div>
           </div>
+
           <div class="form-group">
             <label>Session</label>
             <input type="text" id="r-session" class="input" value="${settings.session || '2024/2025'}" placeholder="e.g. 2024/2025">
@@ -201,6 +278,15 @@ async function renderNewReceiptForm() {
         </div>
       </div>
 `;
+
+  rcptInitStudentSearch(students);
+  // Close dropdown when clicking outside
+  document.addEventListener('click', function _outsideClick(e) {
+    if (!e.target.closest('#student-search-wrap')) {
+      const dd = document.getElementById('student-dropdown');
+      if (dd) dd.style.display = 'none';
+    }
+  }, { once: false, capture: false });
 
   DEFAULT_FEE_ITEMS.slice(0, 5).forEach(name => rcptAddPresetRow(name));
   rcptRecalc();
@@ -303,8 +389,18 @@ async function renderReceiptPreview(id, data) {
     catch(e) { alert('Could not load receipt: ' + e.message); return; }
   }
 
+  // Fetch student passport if not already on the receipt object
+  if (!r.passport && r.studentId) {
+    try {
+      const students = await API.get('/api/students');
+      const stu = students.find(s => s.id === r.studentId);
+      if (stu) r.passport = stu.passport || '';
+    } catch(e) {}
+  }
+
   const total      = (r.items || []).reduce((s, it) => s + (parseFloat(it.amount) || 0), 0);
   const totalWords = numberToWords(Math.floor(total)) + ' Naira Only';
+  const settings   = DB.getSettings ? DB.getSettings() : {};
 
   document.getElementById('main-content').innerHTML = `
       <div class="page-header">
@@ -312,12 +408,12 @@ async function renderReceiptPreview(id, data) {
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-ghost" onclick="renderReceiptsPage()">← Back</button>
           <button class="btn btn-secondary" onclick="shareReceipt('${r.id}')">🔗 Share</button>
-          <button class="btn btn-primary" onclick="window.print()">🖨️ Print / PDF</button>
+          <button class="btn btn-primary" onclick="rcptPrint('${r.id}')">🖨️ Print / PDF</button>
         </div>
       </div>
 
       <div id="receipt-printable" style="background:#fff;border:1px solid #ddd;border-radius:10px;padding:28px 32px;max-width:680px;font-family:Arial,sans-serif;">
-        ${buildReceiptCardHTML(r, total, totalWords)}
+        ${buildReceiptCardHTML(r, total, totalWords, settings)}
       </div>
 
       <!-- Share Modal -->
@@ -342,10 +438,53 @@ async function renderReceiptPreview(id, data) {
 `;
 }
 
-function buildReceiptCardHTML(r, total, totalWords) {
+// ── Print / PDF export (opens a clean printable window) ──────
+function rcptPrint(id) {
+  const card = document.getElementById('receipt-printable');
+  if (!card) { window.print(); return; }
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>Receipt — Criterion College</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #fff; padding: 20px; }
+    @media print {
+      body { padding: 0; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print" style="margin-bottom:16px;">
+    <button onclick="window.print()" style="padding:8px 20px;background:#1a6e3c;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">🖨️ Print / Save PDF</button>
+  </div>
+  ${card.innerHTML}
+</body>
+</html>`;
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+  setTimeout(() => win.print(), 500);
+}
+
+// ── Receipt Card HTML ─────────────────────────────────────────
+function buildReceiptCardHTML(r, total, totalWords, settings) {
+  settings = settings || {};
   const logoHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
     ? `<img src="${SCHOOL_LOGO}" style="width:60px;height:60px;object-fit:contain;border-radius:50%;">`
     : `<div style="width:60px;height:60px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:20px;">CC</div>`;
+
+  // Student passport
+  const passportHTML = r.passport
+    ? `<img src="${r.passport}" style="width:70px;height:80px;object-fit:cover;border-radius:4px;border:2px solid #1a6e3c;display:block;" />`
+    : `<div style="width:70px;height:80px;background:#e8f5e9;border-radius:4px;border:2px solid #1a6e3c;display:flex;align-items:center;justify-content:center;font-size:28px;">👤</div>`;
+
+  // Stamp as bursar signature
+  const stampHTML = settings.stampImage
+    ? `<img src="${settings.stampImage}" style="width:90px;height:90px;object-fit:contain;display:block;margin:0 auto;" />`
+    : `<div style="width:90px;height:40px;"></div>`;
 
   const methods         = ['Cash','Cheque','Bank Transfer','Others'];
   const selectedMethods = (r.payment_method || '').split(',').map(m => m.trim());
@@ -353,26 +492,34 @@ function buildReceiptCardHTML(r, total, totalWords) {
   const blankCount      = Math.max(0, 5 - filledRows.length);
 
   return `
-    <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:8px;">
-      ${logoHTML}
-      <div style="text-align:center;">
-        <div style="font-size:20px;font-weight:800;color:#1a6e3c;letter-spacing:0.5px;">CRITERION COLLEGE, OSOGBO</div>
-        <div style="background:#222;color:#fff;font-weight:700;font-size:13px;padding:3px 16px;border-radius:4px;display:inline-block;margin-top:4px;">08063224872</div>
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        ${logoHTML}
+        <div>
+          <div style="font-size:18px;font-weight:800;color:#1a6e3c;letter-spacing:0.5px;">CRITERION COLLEGE, OSOGBO</div>
+          <div style="background:#222;color:#fff;font-weight:700;font-size:12px;padding:2px 12px;border-radius:4px;display:inline-block;margin-top:3px;">08063224872</div>
+        </div>
       </div>
+      <div style="text-align:center;">${passportHTML}<div style="font-size:10px;color:#888;margin-top:3px;">Student Photo</div></div>
     </div>
-    <div style="text-align:center;font-size:12px;text-decoration:underline;color:#333;margin-bottom:6px;">Cash Receipt</div>
+
+    <div style="text-align:center;font-size:12px;text-decoration:underline;color:#333;margin-bottom:6px;font-weight:700;">CASH RECEIPT</div>
+
     <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:10px;">
       <span>Receipt No: <strong style="color:#1a6e3c;">${r.receipt_number}</strong></span>
       <span>Date: <strong>${r.date || ''}</strong></span>
     </div>
+
     <div style="font-size:13px;margin-bottom:4px;">
-      Name: <span style="border-bottom:1px solid #333;display:inline-block;min-width:280px;padding-bottom:2px;"><strong>${r.studentName || ''}</strong></span>
+      Name: <span style="border-bottom:1px solid #333;display:inline-block;min-width:260px;padding-bottom:2px;"><strong>${r.studentName || ''}</strong></span>
     </div>
-    <div style="display:flex;gap:40px;font-size:13px;margin-bottom:4px;">
+    <div style="display:flex;gap:40px;font-size:13px;margin-bottom:10px;">
       <span>Class: <span style="border-bottom:1px solid #333;display:inline-block;min-width:100px;padding-bottom:2px;"><strong>${r.classId || ''}</strong></span></span>
       <span>Session: <strong>${r.session || ''}</strong> &nbsp;|&nbsp; Term: <strong>${r.term || ''}</strong></span>
     </div>
-    <table style="width:100%;border-collapse:collapse;margin-top:12px;">
+
+    <table style="width:100%;border-collapse:collapse;margin-top:4px;">
       <thead>
         <tr style="background:#1a7a3c;color:#fff;">
           <th style="padding:8px 10px;text-align:center;width:42px;font-size:12px;">S/N</th>
@@ -395,50 +542,74 @@ function buildReceiptCardHTML(r, total, totalWords) {
           </tr>`).join('')}
         <tr style="background:#1a7a3c;color:#fff;">
           <td colspan="2" style="padding:9px 10px;text-align:center;font-weight:700;font-size:13px;">TOTAL</td>
-          <td style="padding:9px 10px;text-align:right;font-weight:700;">${rcptFormatMoney(total)}</td>
+          <td style="padding:9px 10px;text-align:right;font-weight:700;font-size:13px;">${rcptFormatMoney(total)}</td>
         </tr>
       </tbody>
     </table>
+
     <div style="margin-top:8px;font-size:12px;color:#333;font-style:italic;text-align:center;">
       Total Amount in Words: <strong>${totalWords}</strong>
     </div>
-    <div style="margin-top:14px;display:flex;gap:20px;flex-wrap:wrap;font-size:12px;">
+
+    <div style="margin-top:12px;display:flex;gap:20px;flex-wrap:wrap;font-size:12px;">
       ${methods.map(m => `
         <label style="display:flex;align-items:center;gap:5px;">
           <span style="display:inline-block;width:14px;height:14px;border:2px solid #333;border-radius:2px;background:${selectedMethods.includes(m)?'#1a6e3c':'#fff'};"></span>
           ${m}
         </label>`).join('')}
     </div>
+
     ${r.to_balance && parseFloat(r.to_balance) > 0 ? `
-    <div style="margin-top:8px;font-size:13px;">
+    <div style="margin-top:6px;font-size:13px;">
       To Balance: <strong>${rcptFormatMoney(r.to_balance)}</strong>
     </div>` : ''}
-    <div style="margin-top:24px;display:flex;justify-content:space-between;font-size:12px;">
+
+    <!-- Signatures -->
+    <div style="margin-top:24px;display:flex;justify-content:space-between;align-items:flex-end;font-size:12px;">
       <div style="text-align:center;">
-        <div style="border-top:1px solid #333;width:140px;padding-top:4px;">Bursar's Signature</div>
-        <div style="margin-top:2px;font-weight:600;">${r.bursar_name || ''}</div>
+        <div style="border-top:1px solid #333;width:160px;padding-top:4px;">Parent/Guardian Signature</div>
       </div>
       <div style="text-align:center;">
-        <div style="border-top:1px solid #333;width:140px;padding-top:4px;">Parent/Guardian Signature</div>
+        ${stampHTML}
+        <div style="border-top:1px solid #333;width:160px;padding-top:4px;margin-top:4px;">
+          ${r.bursar_name || 'Bursar'}
+        </div>
+        <div style="font-size:10px;color:#888;margin-top:2px;">Authorised Signatory</div>
       </div>
     </div>
-    <div style="margin-top:16px;text-align:center;font-size:11px;color:#888;border-top:1px dashed #ccc;padding-top:8px;">
+
+    <div style="margin-top:14px;text-align:center;font-size:11px;color:#888;border-top:1px dashed #ccc;padding-top:8px;">
       This receipt is computer generated. Please keep it safe.
     </div>
   `;
 }
 
+// ── Share receipt — auto-generates link with student name ─────
 async function shareReceipt(id) {
   try {
     const res = await API.post(`/api/receipts/${id}/share`, {});
+    // Build URL with student name slug for readability
+    let url = res.url;
+    if (res.url && !res.url.includes('student=')) {
+      // Try to get student name from already-loaded receipt data
+      const allReceipts = window._allReceipts || [];
+      const rcpt = allReceipts.find(r => r.id === id);
+      if (rcpt && rcpt.studentName) {
+        const slug = rcpt.studentName.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
+        url = res.url + '&student=' + encodeURIComponent(slug);
+      }
+    }
+
     const modal = document.getElementById('rcpt-share-modal');
     if (modal) {
-      document.getElementById('rcpt-share-link').value = res.url;
+      document.getElementById('rcpt-share-link').value = url;
       const wa = document.getElementById('rcpt-whatsapp-btn');
-      if (wa) wa.href = `https://wa.me/?text=${encodeURIComponent('View receipt: ' + res.url)}`;
+      if (wa) wa.href = `https://wa.me/?text=${encodeURIComponent('View receipt: ' + url)}`;
       modal.style.display = 'flex';
     } else {
-      prompt('Share this link:', res.url);
+      // Auto-copy and show minimal prompt
+      navigator.clipboard.writeText(url).catch(() => {});
+      prompt('Share this link:', url);
     }
   } catch(e) {
     alert('Could not generate share link: ' + e.message);
@@ -449,8 +620,11 @@ function rcptCopyLink() {
   const inp = document.getElementById('rcpt-share-link');
   if (inp) {
     inp.select();
-    document.execCommand('copy');
-    alert('Link copied!');
+    navigator.clipboard.writeText(inp.value).catch(() => {
+      document.execCommand('copy');
+    });
+    const btn = document.querySelector('#rcpt-share-modal button.btn-primary');
+    if (btn) { btn.textContent = '✓ Copied!'; setTimeout(() => { btn.textContent = 'Copy'; }, 1500); }
   }
 }
 
