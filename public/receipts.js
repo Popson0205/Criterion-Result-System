@@ -483,9 +483,9 @@ function buildReceiptCardHTML(r, total, totalWords, settings) {
     ? `<img src="${r.passport}" style="width:70px;height:80px;object-fit:cover;border-radius:4px;border:2px solid #1a6e3c;display:block;" />`
     : `<div style="width:70px;height:80px;background:#e8f5e9;border-radius:4px;border:2px solid #1a6e3c;display:flex;align-items:center;justify-content:center;font-size:28px;">👤</div>`;
 
-  const stampHTML = settings.stampImage
-    ? `<img src="${settings.stampImage}" style="width:90px;height:90px;object-fit:contain;display:block;margin:0 auto;" />`
-    : `<div style="width:90px;height:40px;"></div>`;
+  const stampHTML = settings.bursarSignature
+    ? `<img src="${settings.bursarSignature}" style="width:100%;height:100%;object-fit:contain;object-position:bottom;display:block;" />`
+    : `<div style="width:100%;height:100%;"></div>`;
 
   const methods         = ['Cash','Cheque','Bank Transfer','Others'];
   const selectedMethods = (r.payment_method || '').split(',').map(m => m.trim());
@@ -589,11 +589,13 @@ function buildReceiptCardHTML(r, total, totalWords, settings) {
         <div style="border-top:1px solid #333;width:160px;padding-top:4px;">Parent/Guardian Signature</div>
       </div>
       <div style="text-align:center;">
-        ${stampHTML}
-        <div style="border-top:1px solid #333;width:160px;padding-top:4px;margin-top:4px;">
+        <div style="width:180px;height:60px;display:flex;align-items:flex-end;justify-content:center;margin:0 auto;">
+          ${stampHTML}
+        </div>
+        <div style="border-top:2px solid #333;width:180px;padding-top:4px;margin-top:0;font-weight:700;font-size:13px;">
           ${r.bursar_name || 'Bursar'}
         </div>
-        <div style="font-size:10px;color:#888;margin-top:2px;">Authorised Signatory</div>
+        <div style="font-size:10px;color:#888;margin-top:2px;font-weight:600;">Authorised Signatory</div>
       </div>
     </div>
 
