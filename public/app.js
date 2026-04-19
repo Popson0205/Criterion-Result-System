@@ -1069,6 +1069,23 @@ function renderSettings() {
         </div>
       </div>
 
+      <div class="form-group" style="margin-top:20px;">
+        <label>Bursar Signature Image</label>
+        <div style="display:flex;align-items:center;gap:14px;margin-top:6px;">
+          <div id="bursar-sig-preview" style="width:180px;height:60px;border:2px dashed #55A845;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f0fdf4;flex-shrink:0;">
+            ${s.bursarSignature
+              ? `<img src="${s.bursarSignature}" style="width:100%;height:100%;object-fit:contain;object-position:bottom;" />`
+              : '<span style="font-size:11px;color:#888;">No signature yet</span>'}
+          </div>
+          <div>
+            <input id="bursar-sig-file" type="file" accept="image/*" style="display:none;" onchange="previewBursarSig(this)" />
+            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('bursar-sig-file').click()">Upload Signature</button>
+            ${s.bursarSignature ? `<button class="btn btn-ghost btn-sm" style="margin-top:6px;display:block;color:#dc2626;" onclick="clearBursarSig()">Remove</button>` : ''}
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">PNG with transparent background works best.<br/>Appears on receipts as the bursar's authorised signature.</div>
+          </div>
+        </div>
+      </div>
+
       <div class="form-group">
         <label>School Logo</label>
         <div style="display:flex;align-items:center;gap:14px;margin-top:6px;">
@@ -1112,6 +1129,28 @@ function clearStamp() {
   DB.saveSettings(s).then(() => render());
 }
 
+function previewBursarSig(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const prev = document.getElementById('bursar-sig-preview');
+    if (prev) prev.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:contain;object-position:bottom;" />`;
+    window._bursarSigData = e.target.result;
+    const s = DB.getSettings();
+    s.bursarSignature = e.target.result;
+    DB.saveSettings(s).catch(() => {});
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearBursarSig() {
+  window._bursarSigData = null;
+  const s = DB.getSettings();
+  s.bursarSignature = null;
+  DB.saveSettings(s).then(() => render());
+}
+
 async function saveSettings() {
   const existing = DB.getSettings();
   const s = {
@@ -1122,9 +1161,11 @@ async function saveSettings() {
     principalName: document.getElementById('set-principal')?.value.trim(),
     schoolMotto:   document.getElementById('set-motto')?.value.trim(),
     stampImage:    window._stampData || existing.stampImage || null,
+    bursarSignature: window._bursarSigData || existing.bursarSignature || null,
   };
   await DB.saveSettings(s);
   window._stampData = null;
+  window._bursarSigData = null;
   // Show toast
   const toast = document.createElement('div');
   toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1a6e3c;color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.2);';
