@@ -2,7 +2,7 @@
 <html class="light">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <!-- ── PWA: Add to Home Screen ──────────────────────────── -->
   <link rel="manifest" href="/manifest.json" />
   <meta name="theme-color" content="#1a6e3c" />
@@ -256,12 +256,38 @@
       .btn { font-size: 13px !important; }
     }
 
-    /* ── TABLET (768px) — keep sidebar but narrower ── */
-    @media (min-width: 601px) and (max-width: 900px) {
+    /* ── TABLET PORTRAIT (601px–900px) — icon-only sidebar ── */
+    @media (min-width: 601px) and (max-width: 900px) and (orientation: portrait) {
       .sidebar { width: 60px !important; }
       .sidebar-school, .sidebar-sub, .nav-item span:last-child { display: none; }
       .stats-row { grid-template-columns: repeat(2, 1fr); }
       .main-area { padding: 16px; }
+      .login-card { width: 80%; max-width: 420px; }
+    }
+
+    /* ── TABLET LANDSCAPE (601px–1024px landscape) — full sidebar ── */
+    @media (min-width: 601px) and (max-width: 1024px) and (orientation: landscape) {
+      .layout { flex-direction: row; min-height: 100vh; }
+      .sidebar {
+        width: 200px !important;
+        min-height: 100vh;
+        height: 100vh;
+        position: sticky;
+        top: 0;
+        flex-direction: column !important;
+      }
+      .sidebar-school, .sidebar-sub, .nav-item span:last-child { display: initial; }
+      .main-area { flex: 1; overflow-y: auto; padding: 16px 20px; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+      .login-card { width: 70%; max-width: 420px; }
+    }
+
+    /* ── LARGE TABLET / DESKTOP (> 1024px) — full layout ── */
+    @media (min-width: 1025px) {
+      .layout { flex-direction: row; min-height: 100vh; }
+      .sidebar { width: 220px; }
+      .main-area { flex: 1; }
+      .stats-row { grid-template-columns: repeat(4, 1fr); }
     }
   </style>
 </head>
