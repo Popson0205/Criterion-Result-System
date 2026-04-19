@@ -176,6 +176,7 @@ function renderSidebar() {
     ...(admin ? [{ id:'settings',    icon:'⚙️', label:'Settings' }]    : []),
     ...((admin || API.getRole() === 'bursar') ? [{ id:'receipts', icon:'🧾', label:'Receipts' }] : []),
     ...(admin ? [{ id:'bursars', icon:'💰', label:'Bursars' }] : []),
+    ...(admin ? [{ id:'admissions', icon:'📋', label:'Admissions' }] : []),
   ];
   return `
   <aside class="sidebar">
@@ -221,6 +222,7 @@ function renderPage() {
     case 'settings':      return admin ? renderSettings()   : renderResults();
     case 'receipts':      if (admin || API.getRole() === 'bursar') { setTimeout(renderReceiptsPage, 0); return '<div style="padding:40px;text-align:center;color:var(--text-muted);">Loading receipts…</div>'; } return renderResults();
     case 'bursars':       return admin ? renderBursars()    : renderResults();
+    case 'admissions':    if (admin) { setTimeout(renderAdmissions, 0); return '<div style="padding:40px;text-align:center;color:var(--text-muted);">Loading admissions…</div>'; } return renderResults();
     default:              return admin ? renderDashboard()  : renderResults();
   }
 }
@@ -1920,3 +1922,4 @@ async function deleteBursar(id) {
   DB._bursarsLoaded = false;
   navigate('bursars');
 }
+
