@@ -51,8 +51,14 @@ async function initSchema() {
       "daysInSchool"  TEXT DEFAULT '',
       "resumptionDate" TEXT DEFAULT '',
       "stampImage"    TEXT DEFAULT '',
+      "bursarSignature" TEXT DEFAULT '',
       "adminPassword" TEXT DEFAULT 'admin123'
     );
+
+    // Auto-migration: add bursarSignature column if missing
+    await pool.query(`
+      ALTER TABLE settings ADD COLUMN IF NOT EXISTS "bursarSignature" TEXT DEFAULT '';
+    `);
 
     CREATE TABLE IF NOT EXISTS share_tokens (
       token       TEXT PRIMARY KEY,
@@ -300,9 +306,9 @@ const Settings = {
   save: async (s) => {
     await pool.query(`
       UPDATE settings
-      SET session=$1, term=$2, "daysInSchool"=$3, "resumptionDate"=$4, "stampImage"=$5, "adminPassword"=$6
+      SET session=$1, term=$2, "daysInSchool"=$3, "resumptionDate"=$4, "stampImage"=$5, "adminPassword"=$6, "bursarSignature"=$7
       WHERE id=1
-    `, [s.session, s.term, s.daysInSchool || '', s.resumptionDate || '', s.stampImage || '', s.adminPassword || 'admin123']);
+    `, [s.session, s.term, s.daysInSchool || '', s.resumptionDate || '', s.stampImage || '', s.adminPassword || 'admin123', s.bursarSignature || '']);
 
     if (s.adminPassword) {
       const hash = bcrypt.hashSync(s.adminPassword, 10);
@@ -371,7 +377,8 @@ const Receipts = {
   async get(id) {
     const { rows } = await pool.query(
       `SELECT r.*, s.name as "studentName", s."classId", s.passport,
-              (SELECT "stampImage" FROM settings WHERE id=1) as "stampImage"
+              (SELECT "stampImage" FROM settings WHERE id=1) as "stampImage",
+              (SELECT "bursarSignature" FROM settings WHERE id=1) as "bursarSignature"
        FROM receipts r
        LEFT JOIN students s ON s.id = r."studentId"
        WHERE r.id = $1`,
@@ -385,7 +392,8 @@ const Receipts = {
   async getByToken(token) {
     const { rows } = await pool.query(
       `SELECT r.*, s.name as "studentName", s."classId", s.passport,
-              (SELECT "stampImage" FROM settings WHERE id=1) as "stampImage"
+              (SELECT "stampImage" FROM settings WHERE id=1) as "stampImage",
+              (SELECT "bursarSignature" FROM settings WHERE id=1) as "bursarSignature"
        FROM receipts r
        LEFT JOIN students s ON s.id = r."studentId"
        WHERE r.share_token = $1`,
