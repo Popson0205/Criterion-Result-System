@@ -55,11 +55,6 @@ async function initSchema() {
       "adminPassword" TEXT DEFAULT 'admin123'
     );
 
-    // Auto-migration: add bursarSignature column if missing
-    await pool.query(`
-      ALTER TABLE settings ADD COLUMN IF NOT EXISTS "bursarSignature" TEXT DEFAULT '';
-    `);
-
     CREATE TABLE IF NOT EXISTS share_tokens (
       token       TEXT PRIMARY KEY,
       "studentId" TEXT NOT NULL,
@@ -100,6 +95,11 @@ async function initSchema() {
   if (sRows.length === 0) {
     await pool.query("INSERT INTO settings (id) VALUES (1)");
   }
+
+  // Auto-migration: add bursarSignature column if missing
+  await pool.query(`
+    ALTER TABLE settings ADD COLUMN IF NOT EXISTS "bursarSignature" TEXT DEFAULT '';
+  `);
 
   // Auto-migration: update role CHECK for existing deployments
   await pool.query(`
