@@ -1092,8 +1092,9 @@ function renderSettings() {
         <label>School Logo</label>
         <div style="display:flex;align-items:center;gap:14px;margin-top:6px;">
           <div style="width:72px;height:72px;border:2px solid #55A845;border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#f0fdf4;flex-shrink:0;">
-            ${typeof SCHOOL_LOGO !== 'undefined' ? `<img src="${typeof SCHOOL_LOGO !== 'undefined' ? 'logo.png' : ''}" style="width:100%;height:100%;object-fit:contain;" />` : '<span style="font-size:22px;">🏫</span>'}
-            <img src="logo.png" style="width:100%;height:100%;object-fit:contain;" onerror="this.style.display='none'" />
+            ${(typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
+              ? `<img src="${SCHOOL_LOGO}" style="width:100%;height:100%;object-fit:contain;" />`
+              : '<span style="font-size:22px;">🏫</span>'}
           </div>
           <div style="font-size:12px;color:var(--text-muted);">Criterion Amazing College logo is embedded and appears top-left on every result sheet.</div>
         </div>
