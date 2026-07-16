@@ -36,7 +36,7 @@ const API = {
   get(path)         { return this.request('GET', path); },
   post(path, body)  { return this.request('POST', path, body); },
   put(path, body)   { return this.request('PUT', path, body); },
-  del(path)         { return this.request('DELETE', path); },
+  del(path, body)   { return this.request('DELETE', path, body); },
 };
 
 // ── DB object — same interface as original data.js DB ─────────
@@ -53,6 +53,8 @@ const DB = {
       API.get('/api/results'),
       API.get('/api/settings'),
     ]);
+    // Hydrate CLASS_SUBJECTS / ALL_CLASSES from the persisted source of truth.
+    if (typeof loadClassSubjects === 'function') await loadClassSubjects();
   },
 
   invalidate() {
@@ -140,4 +142,13 @@ const DB = {
   async createBursar(data)        { return API.post('/api/bursars', data); },
   async updateBursar(id, data)    { return API.put('/api/bursars/' + id, data); },
   async deleteBursar(id)          { return API.del('/api/bursars/' + id); },
+
+  // ── Class Subjects (read: any user · write: admin only) ───
+  _cs(classId)                    { return '/api/class-subjects/' + encodeURIComponent(classId) + '/subjects'; },
+  async addClassSubject(classId, name)              { return API.post(this._cs(classId), { name }); },
+  async renameClassSubject(classId, oldName, newName){ return API.put(this._cs(classId), { oldName, newName }); },
+  async removeClassSubject(classId, name)           { return API.del(this._cs(classId), { name }); },
+  async classSubjectUsage(classId, subject) {
+    return API.get('/api/class-subjects/' + encodeURIComponent(classId) + '/usage?subject=' + encodeURIComponent(subject));
+  },
 };

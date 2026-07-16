@@ -6,7 +6,7 @@ const express  = require('express');
 const cors     = require('cors');
 const jwt      = require('jsonwebtoken');
 const path     = require('path');
-const { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, uid } = require('./db');
+const { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, ClassSubjects, uid } = require('./db');
 
 const app    = express();
 const PORT   = process.env.PORT || 3000;
@@ -125,6 +125,47 @@ app.get('/api/settings', requireAuth, async (req, res) => {
 app.post('/api/settings', requireAdmin, async (req, res) => {
   try { await Settings.save(req.body); res.json({ ok: true }); }
   catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── CLASS SUBJECTS ───────────────────────────────────────────
+// Read is available to any signed-in user (result entry, printing, etc.).
+// All mutations are admin-only. Subject names travel in the request body
+// (not the URL path) because names can contain '/', '&', apostrophes, etc.
+app.get('/api/class-subjects', requireAuth, async (req, res) => {
+  try { res.json(await ClassSubjects.getAll()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/class-subjects/:classId/subjects', requireAdmin, async (req, res) => {
+  try {
+    const classId  = decodeURIComponent(req.params.classId);
+    const subjects = await ClassSubjects.add(classId, req.body.name);
+    res.json({ ok: true, subjects });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+app.put('/api/class-subjects/:classId/subjects', requireAdmin, async (req, res) => {
+  try {
+    const classId  = decodeURIComponent(req.params.classId);
+    const subjects = await ClassSubjects.rename(classId, req.body.oldName, req.body.newName);
+    res.json({ ok: true, subjects });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+app.delete('/api/class-subjects/:classId/subjects', requireAdmin, async (req, res) => {
+  try {
+    const classId  = decodeURIComponent(req.params.classId);
+    const subjects = await ClassSubjects.remove(classId, req.body.name);
+    res.json({ ok: true, subjects });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+app.get('/api/class-subjects/:classId/usage', requireAdmin, async (req, res) => {
+  try {
+    const classId = decodeURIComponent(req.params.classId);
+    const count   = await ClassSubjects.usageCount(classId, req.query.subject || '');
+    res.json({ count });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── TEACHER MANAGEMENT (admin only) ──────────────────────────

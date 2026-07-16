@@ -7,8 +7,14 @@ let currentClass = '';
 let editStudentId = null;
 let editResultId = null;
 let previewStudentId = null;
+let subjectsClass = '';   // selected class on the admin Subjects page
 
 function isAdmin() { return API.getRole() === 'admin'; }
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 function doLogout() {
   sessionStorage.removeItem('cc_token');
   sessionStorage.removeItem('cc_role');
@@ -173,6 +179,7 @@ function renderSidebar() {
     { id:'results',     icon:'📋', label:'Results' },
     ...(admin ? [{ id:'batch_print', icon:'🖨️', label:'Batch Print' }] : []),
     ...(admin ? [{ id:'teachers',    icon:'👩‍🏫', label:'Teachers' }]   : []),
+    ...(admin ? [{ id:'subjects',    icon:'📚', label:'Subjects' }]    : []),
     ...(admin ? [{ id:'settings',    icon:'⚙️', label:'Settings' }]    : []),
     ...((admin || API.getRole() === 'bursar') ? [{ id:'receipts', icon:'🧾', label:'Receipts' }] : []),
     ...(admin ? [{ id:'bursars', icon:'💰', label:'Bursars' }] : []),
@@ -219,6 +226,7 @@ function renderPage() {
     case 'preview_result':return renderPreviewResult();
     case 'batch_print':   return admin ? renderBatchPrint() : renderResults();
     case 'teachers':      return admin ? renderTeachers()   : renderResults();
+    case 'subjects':      return admin ? renderSubjects()   : renderResults();
     case 'settings':      return admin ? renderSettings()   : renderResults();
     case 'receipts':      if (admin || API.getRole() === 'bursar') { setTimeout(renderReceiptsPage, 0); return '<div style="padding:40px;text-align:center;color:var(--text-muted);">Loading receipts…</div>'; } return renderResults();
     case 'bursars':       return admin ? renderBursars()    : renderResults();
@@ -1332,6 +1340,164 @@ async function boot() {
 }
 boot();
 
+
+// ============================================================
+// SUBJECT MANAGEMENT (Admin only) — per-class add / edit / remove
+// Backed by the class_subjects table via /api/class-subjects.
+// ============================================================
+function renderSubjects() {
+  const classes = ALL_CLASSES;
+  if (classes.length === 0) {
+    return `<div class="page-header"><h1 class="page-title">Subjects</h1></div>
+      <div class="card" style="padding:32px;text-align:center;color:var(--text-muted);">
+        No classes are configured yet.
+      </div>`;
+  }
+  if (!subjectsClass || !classes.includes(subjectsClass)) subjectsClass = classes[0];
+  const subjects = CLASS_SUBJECTS[subjectsClass] || [];
+
+  return `
+  <div class="page-header">
+    <h1 class="page-title">Subjects</h1>
+  </div>
+
+  <div class="card" style="padding:20px;margin-bottom:16px;">
+    <div class="form-group" style="max-width:340px;margin-bottom:0;">
+      <label>Select Class</label>
+      <select class="input" onchange="selectSubjectClass(this.value)">
+        ${classes.map(c => `<option value="${escapeHtml(c)}" ${c === subjectsClass ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+      </select>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:10px;">
+      Changes here update result entry, report cards and printouts for this class immediately.
+    </div>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <div style="font-weight:700;">${escapeHtml(subjectsClass)} <span style="color:var(--text-muted);font-weight:500;">· ${subjects.length} subject${subjects.length === 1 ? '' : 's'}</span></div>
+      <button class="btn btn-primary btn-sm" onclick="showSubjectModal()">+ Add Subject</button>
+    </div>
+    ${subjects.length === 0
+      ? `<div style="padding:32px;text-align:center;color:var(--text-muted);">No subjects for this class yet. Add one to get started.</div>`
+      : `<table class="data-table">
+          <thead><tr>
+            <th style="width:56px;">#</th><th>Subject</th><th style="width:170px;"></th>
+          </tr></thead>
+          <tbody>
+            ${subjects.map((s, i) => `
+            <tr>
+              <td style="color:var(--text-muted);">${i + 1}</td>
+              <td style="font-weight:600;">${escapeHtml(s)}</td>
+              <td>
+                <button class="btn btn-ghost btn-sm" onclick="editSubjectAt(${i})">Edit</button>
+                <button class="btn btn-ghost btn-sm" style="color:#dc2626;" onclick="removeSubjectAt(${i})">Remove</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`}
+  </div>
+
+  <!-- Subject Modal (add / edit) -->
+  <div id="subject-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+    <div class="card" style="width:400px;padding:28px;">
+      <h3 id="subject-modal-title" style="margin-bottom:6px;color:#1a6e3c;">Add Subject</h3>
+      <div id="subject-modal-class" style="font-size:12px;color:var(--text-muted);margin-bottom:18px;"></div>
+      <input type="hidden" id="subject-index" value="-1" />
+      <div class="form-group" style="margin-bottom:20px;">
+        <label>Subject Name</label>
+        <input id="subject-name" type="text" class="input" placeholder="e.g. Mathematics"
+          onkeydown="if(event.key==='Enter')saveSubject()" />
+      </div>
+      <div id="subject-error" style="color:#dc2626;font-size:13px;margin-bottom:12px;min-height:16px;"></div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-primary" onclick="saveSubject()">Save</button>
+        <button class="btn btn-ghost" onclick="closeSubjectModal()">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function selectSubjectClass(cls) {
+  subjectsClass = cls;
+  navigate('subjects');
+}
+
+function showSubjectModal(index = -1) {
+  const editing = index >= 0;
+  const current = editing ? (CLASS_SUBJECTS[subjectsClass] || [])[index] || '' : '';
+  document.getElementById('subject-modal').style.display = 'flex';
+  document.getElementById('subject-modal-title').textContent = editing ? 'Edit Subject' : 'Add Subject';
+  document.getElementById('subject-modal-class').textContent = 'Class: ' + subjectsClass;
+  document.getElementById('subject-index').value = String(index);
+  document.getElementById('subject-name').value = current;
+  document.getElementById('subject-error').textContent = '';
+  setTimeout(() => document.getElementById('subject-name').focus(), 40);
+}
+
+function editSubjectAt(index) { showSubjectModal(index); }
+
+function closeSubjectModal() {
+  const m = document.getElementById('subject-modal');
+  if (m) m.style.display = 'none';
+}
+
+async function saveSubject() {
+  const idx   = parseInt(document.getElementById('subject-index').value, 10);
+  const name  = document.getElementById('subject-name').value.trim();
+  const errEl = document.getElementById('subject-error');
+  errEl.textContent = '';
+
+  if (!name) { errEl.textContent = 'Subject name is required'; return; }
+  const existing = CLASS_SUBJECTS[subjectsClass] || [];
+  const dup = existing.some((s, i) => i !== idx && s.toLowerCase() === name.toLowerCase());
+  if (dup) { errEl.textContent = 'That subject already exists in this class'; return; }
+
+  try {
+    let res;
+    if (idx >= 0) {
+      const oldName = existing[idx];
+      if (oldName === name) { closeSubjectModal(); return; }
+      res = await DB.renameClassSubject(subjectsClass, oldName, name);
+    } else {
+      res = await DB.addClassSubject(subjectsClass, name);
+    }
+    if (res && res.error) { errEl.textContent = res.error; return; }
+    await loadClassSubjects();
+    // A rename migrates stored score keys server-side; refresh cached data.
+    if (idx >= 0) { DB.invalidate(); await DB.init(); }
+    closeSubjectModal();
+    navigate('subjects');
+  } catch (e) {
+    errEl.textContent = (e && e.message) || 'Failed to save subject';
+  }
+}
+
+async function removeSubjectAt(index) {
+  const name = (CLASS_SUBJECTS[subjectsClass] || [])[index];
+  if (!name) return;
+
+  let message = `Remove "${name}" from ${subjectsClass}?`;
+  try {
+    const usage = await DB.classSubjectUsage(subjectsClass, name);
+    if (usage && usage.count > 0) {
+      message = `${usage.count} saved result(s) in ${subjectsClass} have scores recorded for "${name}".\n\n`
+        + `Removing it hides this subject from result entry, report cards and printouts going forward. `
+        + `Existing score data is kept in the database but will no longer be shown.\n\nRemove anyway?`;
+    }
+  } catch (e) { /* fall back to the simple confirm */ }
+
+  if (!confirm(message)) return;
+
+  try {
+    const res = await DB.removeClassSubject(subjectsClass, name);
+    if (res && res.error) { alert(res.error); return; }
+    await loadClassSubjects();
+    navigate('subjects');
+  } catch (e) {
+    alert((e && e.message) || 'Failed to remove subject');
+  }
+}
 
 // ============================================================
 // TEACHER MANAGEMENT (Admin only)
