@@ -61,6 +61,29 @@ Login as admin → click **Teachers** in sidebar → Add Teacher
 
 ---
 
+## Managing Subjects per Class
+
+Each class has its own ordered list of subjects, which drives result entry,
+report cards and printouts. Admins edit these from the app — no code deploy needed:
+
+1. Login as admin → click **Subjects** in the sidebar.
+2. Pick a class from the dropdown.
+3. **Add** a subject, **Edit** (rename) an existing one, or **Remove** one.
+
+Notes:
+- Duplicate names within the same class are rejected (case-insensitive), and
+  empty names are not allowed.
+- Renaming a subject also migrates the score keys of existing results for that
+  class, so historical report cards stay consistent.
+- Removing a subject that already has recorded scores asks for confirmation and
+  shows how many results are affected; the underlying score data is retained.
+
+The subject lists live in the `class_subjects` database table (seeded once from
+built-in defaults) and are the single source of truth read across the app. The
+copy in `public/data.js` is only an offline fallback.
+
+---
+
 ## File Structure
 
 ```

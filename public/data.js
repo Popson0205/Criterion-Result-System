@@ -20,8 +20,26 @@ const CLASS_SUBJECTS = {
   "S.S 3":       ["Mathematics","English Language","Physics","Biology","Chemistry","Geography","Citizenship and Heritage Education","Agricultural Science","Qur'an","Arabic Studies","Digital Technology"],
 };
 
+// CLASS_SUBJECTS above is the offline/first-paint fallback. The live source of
+// truth is the class_subjects DB table, exposed at GET /api/class-subjects and
+// edited from the admin Subjects page. loadClassSubjects() hydrates the two
+// globals below IN PLACE (never reassigns them) so every consumer that reads
+// CLASS_SUBJECTS[classId] / ALL_CLASSES — app.js, print.js — sees live data.
 const ALL_CLASSES = Object.keys(CLASS_SUBJECTS);
 const TERMS = ["1ST TERM","2ND TERM","3RD TERM"];
+
+async function loadClassSubjects() {
+  try {
+    const data = await API.get('/api/class-subjects');
+    if (!data || typeof data !== 'object' || data.error) return;
+    Object.keys(CLASS_SUBJECTS).forEach(k => delete CLASS_SUBJECTS[k]);
+    Object.assign(CLASS_SUBJECTS, data);
+    ALL_CLASSES.length = 0;
+    Object.keys(CLASS_SUBJECTS).forEach(k => ALL_CLASSES.push(k));
+  } catch (e) {
+    console.warn('Falling back to bundled default subjects:', e);
+  }
+}
 
 function getGrade(score) {
   if (score >= 70) return { grade:'A', remark:'Excellent', color:'#1a6e3c' };

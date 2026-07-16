@@ -9,6 +9,36 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+// Build an Error carrying an HTTP status so routes can map it directly.
+function httpError(status, message) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+// Seed defaults for the per-class subject lists. This is the ONE-TIME seed used
+// to populate the class_subjects table on a fresh database. After seeding, the
+// table (managed via the admin Subjects page) is the single source of truth.
+// The client keeps an identical copy in public/data.js purely as an offline
+// fallback; both must stay in sync when changed by hand.
+const DEFAULT_CLASS_SUBJECTS = {
+  "Creche 1":    ["Reading","Qur'an","Speaking","Writing Skill","Arts","Arabic","Numeracy"],
+  "Creche 2":    ["Reading","Qur'an","Speaking","Writing Skill","Arts","Arabic","Numeracy"],
+  "Pre-Nursery": ["Mathematics Skill","Writing Skill","English Skill","CCA","Science","Arabic Studies","Qur'an","Social Habits","Rhymes/Poems","Health Habits"],
+  "Nursery 1":   ["Mathematics Skill","Writing Skill","English Skill","CCA","Science","Arabic Studies","Qur'an","Social Habits","Rhymes/Poems","Health Habits"],
+  "Nursery 2":   ["Mathematics Skill","Writing Skill","English Skill","CCA","Science","Arabic Studies","Qur'an","Social Habits","Rhymes/Poems","Health Habits"],
+  "Primary 1":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies"],
+  "Primary 2":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies"],
+  "Primary 3":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies","Basic Digital Literacy","PVS"],
+  "Primary 4":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies","Basic Digital Literacy","PVS"],
+  "J.S.S 1":     ["Mathematics","English Studies","Business Studies","Nigeria History","CCA","Intermediate Science","Literature in English","Islamic Studies","Arabic Studies","Agricultural Science","Social and Citizenship Studies","Qur'an","Yoruba","Digital Technology"],
+  "J.S.S 2":     ["Mathematics","English Studies","Business Studies","Nigeria History","CCA","Intermediate Science","Literature in English","Islamic Studies","Arabic Studies","Agricultural Science","Social and Citizenship Studies","Qur'an","Yoruba","Digital Technology"],
+  "J.S.S 3":     ["Mathematics","English Studies","Business Studies","Nigeria History","CCA","Intermediate Science","Literature in English","Islamic Studies","Arabic Studies","Agricultural Science","Social and Citizenship Studies","Qur'an","Yoruba","Digital Technology"],
+  "S.S 1":       ["Mathematics","English Language","Physics","Biology","Chemistry","Geography","Citizenship and Heritage Education","Agricultural Science","Qur'an","Arabic Studies","Digital Technology"],
+  "S.S 2":       ["Mathematics","English Language","Physics","Biology","Chemistry","Geography","Citizenship and Heritage Education","Agricultural Science","Qur'an","Arabic Studies","Digital Technology"],
+  "S.S 3":       ["Mathematics","English Language","Physics","Biology","Chemistry","Geography","Citizenship and Heritage Education","Agricultural Science","Qur'an","Arabic Studies","Digital Technology"],
+};
+
 // ── Schema ────────────────────────────────────────────────────
 async function initSchema() {
   await pool.query(`
@@ -126,6 +156,29 @@ async function initSchema() {
   const { rows: sRows } = await pool.query("SELECT id FROM settings LIMIT 1");
   if (sRows.length === 0) {
     await pool.query("INSERT INTO settings (id) VALUES (1)");
+  }
+
+  // Per-class subject lists — the persisted, admin-editable source of truth.
+  // "position" preserves the display order of classes (Creche → S.S 3).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS class_subjects (
+      "classId"   TEXT PRIMARY KEY,
+      subjects    TEXT NOT NULL DEFAULT '[]',
+      position    INTEGER NOT NULL DEFAULT 0,
+      "updatedAt" TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  // Seed subjects once, on a fresh database, from the bundled defaults.
+  const { rows: csRows } = await pool.query('SELECT 1 FROM class_subjects LIMIT 1');
+  if (csRows.length === 0) {
+    let pos = 0;
+    for (const [classId, subjects] of Object.entries(DEFAULT_CLASS_SUBJECTS)) {
+      await pool.query(
+        'INSERT INTO class_subjects ("classId", subjects, position) VALUES ($1,$2,$3)',
+        [classId, JSON.stringify(subjects), pos++]
+      );
+    }
   }
 
   // Auto-migration: add bursarSignature column if missing
@@ -541,5 +594,128 @@ const Applicants = {
   },
 };
 
-module.exports = { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, uid };
+// ── Class Subjects ────────────────────────────────────────────
+// The persisted, admin-editable per-class subject lists. All mutations
+// validate here (non-empty, no case-insensitive duplicates, class/subject
+// must exist) and throw httpError(status, msg) so routes map cleanly.
+const ClassSubjects = {
+  // Whole map: { "Primary 1": [...subjects], ... } in class display order.
+  getAll: async () => {
+    const { rows } = await pool.query(
+      'SELECT "classId", subjects FROM class_subjects ORDER BY position, "classId"'
+    );
+    const out = {};
+    for (const r of rows) {
+      try { out[r.classId] = JSON.parse(r.subjects || '[]'); }
+      catch { out[r.classId] = []; }
+    }
+    return out;
+  },
+
+  // Ordered subject array for one class, or null if the class row is absent.
+  getOne: async (classId) => {
+    const { rows } = await pool.query(
+      'SELECT subjects FROM class_subjects WHERE "classId"=$1',
+      [classId]
+    );
+    if (!rows[0]) return null;
+    try { return JSON.parse(rows[0].subjects || '[]'); }
+    catch { return []; }
+  },
+
+  _persist: async (classId, subjects) => {
+    await pool.query(
+      'UPDATE class_subjects SET subjects=$1, "updatedAt"=NOW() WHERE "classId"=$2',
+      [JSON.stringify(subjects), classId]
+    );
+  },
+
+  add: async (classId, rawName) => {
+    const subjects = await ClassSubjects.getOne(classId);
+    if (subjects === null) throw httpError(404, 'Class not found');
+    const name = (rawName || '').trim();
+    if (!name) throw httpError(400, 'Subject name cannot be empty');
+    if (subjects.some(s => s.toLowerCase() === name.toLowerCase()))
+      throw httpError(409, 'That subject already exists in this class');
+    subjects.push(name);
+    await ClassSubjects._persist(classId, subjects);
+    return subjects;
+  },
+
+  remove: async (classId, name) => {
+    const subjects = await ClassSubjects.getOne(classId);
+    if (subjects === null) throw httpError(404, 'Class not found');
+    const idx = subjects.indexOf(name);
+    if (idx < 0) throw httpError(404, 'Subject not found in this class');
+    subjects.splice(idx, 1);
+    await ClassSubjects._persist(classId, subjects);
+    return subjects;
+  },
+
+  // Rename a subject AND migrate the score keys of every existing result for
+  // students in this class, so historical results follow the rename. Runs in a
+  // transaction: the subject list and all touched results commit together.
+  rename: async (classId, oldName, rawNewName) => {
+    const subjects = await ClassSubjects.getOne(classId);
+    if (subjects === null) throw httpError(404, 'Class not found');
+    const idx = subjects.indexOf(oldName);
+    if (idx < 0) throw httpError(404, 'Subject not found in this class');
+    const newName = (rawNewName || '').trim();
+    if (!newName) throw httpError(400, 'Subject name cannot be empty');
+    if (subjects.some((s, i) => i !== idx && s.toLowerCase() === newName.toLowerCase()))
+      throw httpError(409, 'That subject already exists in this class');
+    if (newName === oldName) return subjects;
+
+    subjects[idx] = newName;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        'UPDATE class_subjects SET subjects=$1, "updatedAt"=NOW() WHERE "classId"=$2',
+        [JSON.stringify(subjects), classId]
+      );
+      const { rows } = await client.query(
+        'SELECT r.id, r.scores FROM results r JOIN students s ON s.id=r."studentId" WHERE s."classId"=$1',
+        [classId]
+      );
+      for (const row of rows) {
+        let scores;
+        try { scores = JSON.parse(row.scores || '{}'); } catch { continue; }
+        if (!Object.prototype.hasOwnProperty.call(scores, oldName)) continue;
+        if (!Object.prototype.hasOwnProperty.call(scores, newName)) scores[newName] = scores[oldName];
+        delete scores[oldName];
+        await client.query(
+          'UPDATE results SET scores=$1, "updatedAt"=NOW() WHERE id=$2',
+          [JSON.stringify(scores), row.id]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+    return subjects;
+  },
+
+  // How many saved results for this class carry a score under this subject.
+  // Used to warn the admin before removing a subject that has recorded data.
+  usageCount: async (classId, subject) => {
+    const { rows } = await pool.query(
+      'SELECT r.scores FROM results r JOIN students s ON s.id=r."studentId" WHERE s."classId"=$1',
+      [classId]
+    );
+    let count = 0;
+    for (const row of rows) {
+      try {
+        const scores = JSON.parse(row.scores || '{}');
+        if (Object.prototype.hasOwnProperty.call(scores, subject)) count++;
+      } catch { /* skip unparseable */ }
+    }
+    return count;
+  },
+};
+
+module.exports = { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, ClassSubjects, uid };
 
