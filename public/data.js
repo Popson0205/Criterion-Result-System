@@ -7,7 +7,7 @@ const CLASS_SUBJECTS = {
   "Creche 2":    ["Reading","Qur'an","Speaking","Writing Skill","Arts","Arabic","Numeracy"],
   "Pre-Nursery": ["Mathematics Skill","Writing Skill","English Skill","CCA","Science","Arabic Studies","Qur'an","Social Habits","Rhymes/Poems","Health Habits"],
   "Nursery 1":   ["Mathematics Skill","Writing Skill","English Skill","CCA","Science","Arabic Studies","Qur'an","Social Habits","Rhymes/Poems","Health Habits"],
-  "Nursery 2":   ["Mathematics Skill","Writing Skill","English Skill","CCA","Science","Arabic Studies","Qur'an","Social Habits","Rhymes/Poems","Health Habits"],
+  "Nursery 2":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies"],
   "Primary 1":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies"],
   "Primary 2":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies"],
   "Primary 3":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies","Basic Digital Literacy","PVS"],
