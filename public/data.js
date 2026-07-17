@@ -28,9 +28,17 @@ const CLASS_SUBJECTS = {
 const ALL_CLASSES = Object.keys(CLASS_SUBJECTS);
 const TERMS = ["1ST TERM","2ND TERM","3RD TERM"];
 
-async function loadClassSubjects() {
+// Subjects are scoped per (session, term). Pass the session/term you want —
+// defaults to the global settings term if omitted. Every place that renders
+// a term-specific screen (result entry, subjects admin) should call this
+// with THAT screen's session/term before reading CLASS_SUBJECTS, since the
+// list can differ term to term.
+async function loadClassSubjects(session, term) {
   try {
-    const data = await API.get('/api/class-subjects');
+    const s = session || DB.getSettings().session;
+    const t = term    || DB.getSettings().term;
+    const qs = '?session=' + encodeURIComponent(s) + '&term=' + encodeURIComponent(t);
+    const data = await API.get('/api/class-subjects' + qs);
     if (!data || typeof data !== 'object' || data.error) return;
     Object.keys(CLASS_SUBJECTS).forEach(k => delete CLASS_SUBJECTS[k]);
     Object.assign(CLASS_SUBJECTS, data);

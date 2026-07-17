@@ -144,11 +144,14 @@ const DB = {
   async deleteBursar(id)          { return API.del('/api/bursars/' + id); },
 
   // ── Class Subjects (read: any user · write: admin only) ───
+  // Subjects are scoped per (session, term) — every call must say which
+  // term's list it means.
   _cs(classId)                    { return '/api/class-subjects/' + encodeURIComponent(classId) + '/subjects'; },
-  async addClassSubject(classId, name)              { return API.post(this._cs(classId), { name }); },
-  async renameClassSubject(classId, oldName, newName){ return API.put(this._cs(classId), { oldName, newName }); },
-  async removeClassSubject(classId, name)           { return API.del(this._cs(classId), { name }); },
-  async classSubjectUsage(classId, subject) {
-    return API.get('/api/class-subjects/' + encodeURIComponent(classId) + '/usage?subject=' + encodeURIComponent(subject));
+  async addClassSubject(classId, session, term, name)              { return API.post(this._cs(classId), { session, term, name }); },
+  async renameClassSubject(classId, session, term, oldName, newName){ return API.put(this._cs(classId), { session, term, oldName, newName }); },
+  async removeClassSubject(classId, session, term, name)           { return API.del(this._cs(classId), { session, term, name }); },
+  async classSubjectUsage(classId, session, term, subject) {
+    const qs = '?session=' + encodeURIComponent(session) + '&term=' + encodeURIComponent(term) + '&subject=' + encodeURIComponent(subject);
+    return API.get('/api/class-subjects/' + encodeURIComponent(classId) + '/usage' + qs);
   },
 };

@@ -8,6 +8,8 @@ let editStudentId = null;
 let editResultId = null;
 let previewStudentId = null;
 let subjectsClass = '';   // selected class on the admin Subjects page
+let subjectsSession = ''; // selected session on the admin Subjects page (blank = use global settings)
+let subjectsTerm = '';    // selected term on the admin Subjects page (blank = use global settings)
 
 function isAdmin() { return API.getRole() === 'admin'; }
 function escapeHtml(s) {
@@ -25,12 +27,25 @@ function doLogout() {
 }
 
 function navigate(page, params={}) {
+  // The Subjects admin page can browse a different term than the one
+  // currently active in Settings. Once the admin leaves it (for anywhere
+  // other than the result-entry screen, which manages its own term), snap
+  // CLASS_SUBJECTS back to the global current term so every other screen
+  // reflects the right list.
+  const leavingSubjectsContext = currentPage === 'subjects' && page !== 'subjects' && page !== 'enter_result';
+
   currentPage = page;
   if (params.classId !== undefined) currentClass = params.classId;
   if (params.studentId !== undefined) editStudentId = params.studentId;
   if (params.previewId !== undefined) previewStudentId = params.previewId;
   render();
   window.scrollTo(0,0);
+
+  if (leavingSubjectsContext) {
+    subjectsSession = '';
+    subjectsTerm = '';
+    loadClassSubjects().then(render);
+  }
 }
 
 // ── LOGIN PAGE ────────────────────────────────────────────────
@@ -1224,8 +1239,11 @@ async function saveResult(andPreview=false) {
 
 function saveAndPreview() { saveResult(true); }
 
-function reloadEntryResult() {
-  // Re-render enter_result page with new session/term to load correct existing result
+async function reloadEntryResult() {
+  // Subjects are scoped per term, so refetch the list for the newly selected
+  // session/term before re-rendering — otherwise the sheet would keep
+  // showing whichever term's subjects happened to be loaded last.
+  await loadClassSubjects(window._entrySession, window._entryTerm);
   navigate('enter_result');
 }
 
@@ -1354,6 +1372,9 @@ function renderSubjects() {
       </div>`;
   }
   if (!subjectsClass || !classes.includes(subjectsClass)) subjectsClass = classes[0];
+  const settings = DB.getSettings();
+  const curSession = subjectsSession || settings.session;
+  const curTerm    = subjectsTerm    || settings.term;
   const subjects = CLASS_SUBJECTS[subjectsClass] || [];
 
   return `
@@ -1362,14 +1383,27 @@ function renderSubjects() {
   </div>
 
   <div class="card" style="padding:20px;margin-bottom:16px;">
-    <div class="form-group" style="max-width:340px;margin-bottom:0;">
-      <label>Select Class</label>
-      <select class="input" onchange="selectSubjectClass(this.value)">
-        ${classes.map(c => `<option value="${escapeHtml(c)}" ${c === subjectsClass ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
-      </select>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+      <div class="form-group" style="max-width:340px;margin-bottom:0;">
+        <label>Select Class</label>
+        <select class="input" onchange="selectSubjectClass(this.value)">
+          ${classes.map(c => `<option value="${escapeHtml(c)}" ${c === subjectsClass ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" style="max-width:160px;margin-bottom:0;">
+        <label>Session</label>
+        <input type="text" class="input" value="${escapeHtml(curSession)}"
+          onchange="selectSubjectTerm(this.value, '${escapeHtml(curTerm).replace(/'/g, "\\'")}')" id="subjects-session-input" />
+      </div>
+      <div class="form-group" style="max-width:160px;margin-bottom:0;">
+        <label>Term</label>
+        <select class="input" onchange="selectSubjectTerm(document.getElementById('subjects-session-input').value, this.value)">
+          ${TERMS.map(t => `<option value="${t}" ${t === curTerm ? 'selected' : ''}>${t}</option>`).join('')}
+        </select>
+      </div>
     </div>
     <div style="font-size:12px;color:var(--text-muted);margin-top:10px;">
-      Changes here update result entry, report cards and printouts for this class immediately.
+      Changes here apply only to <strong>${escapeHtml(curSession)} · ${escapeHtml(curTerm)}</strong> for this class — other terms keep their own subject lists and are never affected.
     </div>
   </div>
 
@@ -1423,6 +1457,13 @@ function selectSubjectClass(cls) {
   navigate('subjects');
 }
 
+async function selectSubjectTerm(session, term) {
+  subjectsSession = session;
+  subjectsTerm    = term;
+  await loadClassSubjects(subjectsSession, subjectsTerm);
+  navigate('subjects');
+}
+
 function showSubjectModal(index = -1) {
   const editing = index >= 0;
   const current = editing ? (CLASS_SUBJECTS[subjectsClass] || [])[index] || '' : '';
@@ -1453,19 +1494,23 @@ async function saveSubject() {
   const dup = existing.some((s, i) => i !== idx && s.toLowerCase() === name.toLowerCase());
   if (dup) { errEl.textContent = 'That subject already exists in this class'; return; }
 
+  const settings = DB.getSettings();
+  const session = subjectsSession || settings.session;
+  const term    = subjectsTerm    || settings.term;
+
   try {
     let res;
     if (idx >= 0) {
       const oldName = existing[idx];
       if (oldName === name) { closeSubjectModal(); return; }
-      res = await DB.renameClassSubject(subjectsClass, oldName, name);
+      res = await DB.renameClassSubject(subjectsClass, session, term, oldName, name);
     } else {
-      res = await DB.addClassSubject(subjectsClass, name);
+      res = await DB.addClassSubject(subjectsClass, session, term, name);
     }
     if (res && res.error) { errEl.textContent = res.error; return; }
-    await loadClassSubjects();
+    await loadClassSubjects(session, term);
     // A rename migrates stored score keys server-side; refresh cached data.
-    if (idx >= 0) { DB.invalidate(); await DB.init(); }
+    if (idx >= 0) { DB.invalidate(); await DB.init(); await loadClassSubjects(session, term); }
     closeSubjectModal();
     navigate('subjects');
   } catch (e) {
@@ -1477,12 +1522,16 @@ async function removeSubjectAt(index) {
   const name = (CLASS_SUBJECTS[subjectsClass] || [])[index];
   if (!name) return;
 
-  let message = `Remove "${name}" from ${subjectsClass}?`;
+  const settings = DB.getSettings();
+  const session = subjectsSession || settings.session;
+  const term    = subjectsTerm    || settings.term;
+
+  let message = `Remove "${name}" from ${subjectsClass} for ${session} · ${term}?`;
   try {
-    const usage = await DB.classSubjectUsage(subjectsClass, name);
+    const usage = await DB.classSubjectUsage(subjectsClass, session, term, name);
     if (usage && usage.count > 0) {
-      message = `${usage.count} saved result(s) in ${subjectsClass} have scores recorded for "${name}".\n\n`
-        + `Removing it hides this subject from result entry, report cards and printouts going forward. `
+      message = `${usage.count} saved result(s) in ${subjectsClass} for ${session} · ${term} have scores recorded for "${name}".\n\n`
+        + `Removing it hides this subject from result entry, report cards and printouts for this term only — other terms are unaffected. `
         + `Existing score data is kept in the database but will no longer be shown.\n\nRemove anyway?`;
     }
   } catch (e) { /* fall back to the simple confirm */ }
@@ -1490,9 +1539,9 @@ async function removeSubjectAt(index) {
   if (!confirm(message)) return;
 
   try {
-    const res = await DB.removeClassSubject(subjectsClass, name);
+    const res = await DB.removeClassSubject(subjectsClass, session, term, name);
     if (res && res.error) { alert(res.error); return; }
-    await loadClassSubjects();
+    await loadClassSubjects(session, term);
     navigate('subjects');
   } catch (e) {
     alert((e && e.message) || 'Failed to remove subject');
