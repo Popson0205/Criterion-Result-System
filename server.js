@@ -143,15 +143,31 @@ app.post('/api/settings', requireAdmin, async (req, res) => {
 // Read is available to any signed-in user (result entry, printing, etc.).
 // All mutations are admin-only. Subject names travel in the request body
 // (not the URL path) because names can contain '/', '&', apostrophes, etc.
+// session/term are required on every route below — subjects are scoped per
+// term, so callers must say which term's list they mean. Falls back to the
+// global settings row only if a caller omits them (keeps old clients working).
+async function resolveTermParams(req) {
+  let { session, term } = req.method === 'GET' ? req.query : req.body;
+  if (!session || !term) {
+    const settings = await Settings.get();
+    session = session || settings.session;
+    term    = term    || settings.term;
+  }
+  return { session, term };
+}
+
 app.get('/api/class-subjects', requireAuth, async (req, res) => {
-  try { res.json(await ClassSubjects.getAll()); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  try {
+    const { session, term } = await resolveTermParams(req);
+    res.json(await ClassSubjects.getAll(session, term));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/class-subjects/:classId/subjects', requireAdmin, async (req, res) => {
   try {
     const classId  = decodeURIComponent(req.params.classId);
-    const subjects = await ClassSubjects.add(classId, req.body.name);
+    const { session, term } = await resolveTermParams(req);
+    const subjects = await ClassSubjects.add(classId, session, term, req.body.name);
     res.json({ ok: true, subjects });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
@@ -159,7 +175,8 @@ app.post('/api/class-subjects/:classId/subjects', requireAdmin, async (req, res)
 app.put('/api/class-subjects/:classId/subjects', requireAdmin, async (req, res) => {
   try {
     const classId  = decodeURIComponent(req.params.classId);
-    const subjects = await ClassSubjects.rename(classId, req.body.oldName, req.body.newName);
+    const { session, term } = await resolveTermParams(req);
+    const subjects = await ClassSubjects.rename(classId, session, term, req.body.oldName, req.body.newName);
     res.json({ ok: true, subjects });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
@@ -167,7 +184,8 @@ app.put('/api/class-subjects/:classId/subjects', requireAdmin, async (req, res) 
 app.delete('/api/class-subjects/:classId/subjects', requireAdmin, async (req, res) => {
   try {
     const classId  = decodeURIComponent(req.params.classId);
-    const subjects = await ClassSubjects.remove(classId, req.body.name);
+    const { session, term } = await resolveTermParams(req);
+    const subjects = await ClassSubjects.remove(classId, session, term, req.body.name);
     res.json({ ok: true, subjects });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
@@ -175,7 +193,8 @@ app.delete('/api/class-subjects/:classId/subjects', requireAdmin, async (req, re
 app.get('/api/class-subjects/:classId/usage', requireAdmin, async (req, res) => {
   try {
     const classId = decodeURIComponent(req.params.classId);
-    const count   = await ClassSubjects.usageCount(classId, req.query.subject || '');
+    const { session, term } = await resolveTermParams(req);
+    const count   = await ClassSubjects.usageCount(classId, session, term, req.query.subject || '');
     res.json({ count });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

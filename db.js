@@ -158,26 +158,94 @@ async function initSchema() {
     await pool.query("INSERT INTO settings (id) VALUES (1)");
   }
 
-  // Per-class subject lists — the persisted, admin-editable source of truth.
-  // "position" preserves the display order of classes (Creche → S.S 3).
+  // Per-class, per-term subject lists — the persisted, admin-editable source
+  // of truth. "position" preserves the display order of classes (Creche → S.S 3).
   await pool.query(`
     CREATE TABLE IF NOT EXISTS class_subjects (
-      "classId"   TEXT PRIMARY KEY,
+      "classId"   TEXT NOT NULL,
       subjects    TEXT NOT NULL DEFAULT '[]',
       position    INTEGER NOT NULL DEFAULT 0,
-      "updatedAt" TIMESTAMPTZ DEFAULT NOW()
+      session     TEXT NOT NULL DEFAULT '',
+      term        TEXT NOT NULL DEFAULT '',
+      "updatedAt" TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY ("classId", session, term)
     );
   `);
 
-  // Seed subjects once, on a fresh database, from the bundled defaults.
+  // Seed subjects once, on a fresh database, from the bundled defaults —
+  // applied to whatever session/term is current in settings.
   const { rows: csRows } = await pool.query('SELECT 1 FROM class_subjects LIMIT 1');
   if (csRows.length === 0) {
+    const { rows: setRows } = await pool.query('SELECT session, term FROM settings WHERE id=1');
+    const seedSession = setRows[0]?.session || '2024/2025';
+    const seedTerm    = setRows[0]?.term    || '1ST TERM';
     let pos = 0;
     for (const [classId, subjects] of Object.entries(DEFAULT_CLASS_SUBJECTS)) {
       await pool.query(
-        'INSERT INTO class_subjects ("classId", subjects, position) VALUES ($1,$2,$3)',
-        [classId, JSON.stringify(subjects), pos++]
+        'INSERT INTO class_subjects ("classId", subjects, position, session, term) VALUES ($1,$2,$3,$4,$5)',
+        [classId, JSON.stringify(subjects), pos++, seedSession, seedTerm]
       );
+    }
+  }
+
+  // CREATE TABLE IF NOT EXISTS above is a no-op for deployments where
+  // class_subjects already existed, so add the new columns explicitly.
+  await pool.query(`ALTER TABLE class_subjects ADD COLUMN IF NOT EXISTS session TEXT NOT NULL DEFAULT '';`);
+  await pool.query(`ALTER TABLE class_subjects ADD COLUMN IF NOT EXISTS term    TEXT NOT NULL DEFAULT '';`);
+
+  // Auto-migration: older deployments had ONE subject list shared by every
+  // term/session (PRIMARY KEY was "classId" alone). Detect that shape and
+  // rekey it into per-(classId, session, term) rows, so editing subjects for
+  // the current term never touches other terms' result sheets again.
+  const { rows: pkCols } = await pool.query(`
+    SELECT a.attname FROM pg_index i
+    JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+    WHERE i.indrelid = 'class_subjects'::regclass AND i.indisprimary
+  `);
+  const isOldShape = pkCols.length === 1 && pkCols[0].attname === 'classId';
+  if (isOldShape) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('ALTER TABLE class_subjects DROP CONSTRAINT class_subjects_pkey');
+
+      const { rows: oldRows } = await client.query('SELECT "classId", subjects, position FROM class_subjects');
+      const { rows: setRows } = await client.query('SELECT session, term FROM settings WHERE id=1');
+      const currentSession = setRows[0]?.session || '2024/2025';
+      const currentTerm    = setRows[0]?.term    || '1ST TERM';
+
+      for (const row of oldRows) {
+        // Every (session, term) that already has saved results for this
+        // class must keep seeing this same subject list, so old sheets
+        // don't lose columns; the current global term is always included
+        // too, even if no results exist for it yet.
+        const { rows: pairs } = await client.query(
+          `SELECT DISTINCT r.session, r.term FROM results r
+           JOIN students s ON s.id = r."studentId"
+           WHERE s."classId" = $1`,
+          [row.classId]
+        );
+        const pairSet = new Map();
+        for (const p of pairs) pairSet.set(p.session + '|||' + p.term, [p.session, p.term]);
+        pairSet.set(currentSession + '|||' + currentTerm, [currentSession, currentTerm]);
+
+        for (const [session, term] of pairSet.values()) {
+          await client.query(
+            `INSERT INTO class_subjects ("classId", subjects, position, session, term)
+             VALUES ($1,$2,$3,$4,$5)`,
+            [row.classId, row.subjects, row.position, session, term]
+          );
+        }
+      }
+      // The original rows (still session='' term='') are now redundant.
+      await client.query(`DELETE FROM class_subjects WHERE session = '' AND term = ''`);
+      await client.query('ALTER TABLE class_subjects ADD PRIMARY KEY ("classId", session, term)');
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
     }
   }
 
@@ -599,64 +667,88 @@ const Applicants = {
 // validate here (non-empty, no case-insensitive duplicates, class/subject
 // must exist) and throw httpError(status, msg) so routes map cleanly.
 const ClassSubjects = {
-  // Whole map: { "Primary 1": [...subjects], ... } in class display order.
-  getAll: async () => {
+  // Whole map for one (session, term): { "Primary 1": [...subjects], ... }
+  // in class display order. Any class with no row yet for this exact term
+  // is lazily seeded (see getOne) so every class always resolves.
+  getAll: async (session, term) => {
     const { rows } = await pool.query(
-      'SELECT "classId", subjects FROM class_subjects ORDER BY position, "classId"'
+      'SELECT "classId", MIN(position) AS position FROM class_subjects GROUP BY "classId" ORDER BY position, "classId"'
     );
     const out = {};
     for (const r of rows) {
-      try { out[r.classId] = JSON.parse(r.subjects || '[]'); }
-      catch { out[r.classId] = []; }
+      out[r.classId] = await ClassSubjects.getOne(r.classId, session, term);
     }
     return out;
   },
 
-  // Ordered subject array for one class, or null if the class row is absent.
-  getOne: async (classId) => {
+  // Ordered subject array for one class in one (session, term), or null if
+  // the class doesn't exist at all. If the class exists but has no list yet
+  // for this specific term, it's seeded by copying the most recently edited
+  // list for that class (i.e. carried forward from whichever term was
+  // worked on last) — a fresh, independently-editable copy from that point on.
+  getOne: async (classId, session, term) => {
     const { rows } = await pool.query(
-      'SELECT subjects FROM class_subjects WHERE "classId"=$1',
+      'SELECT subjects FROM class_subjects WHERE "classId"=$1 AND session=$2 AND term=$3',
+      [classId, session, term]
+    );
+    if (rows[0]) {
+      try { return JSON.parse(rows[0].subjects || '[]'); }
+      catch { return []; }
+    }
+
+    const { rows: prevRows } = await pool.query(
+      'SELECT subjects, position FROM class_subjects WHERE "classId"=$1 ORDER BY "updatedAt" DESC LIMIT 1',
       [classId]
     );
-    if (!rows[0]) return null;
-    try { return JSON.parse(rows[0].subjects || '[]'); }
+    if (!prevRows[0]) return null; // class truly doesn't exist
+
+    const { subjects, position } = prevRows[0];
+    await pool.query(
+      `INSERT INTO class_subjects ("classId", subjects, position, session, term)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT ("classId", session, term) DO NOTHING`,
+      [classId, subjects, position, session, term]
+    );
+    try { return JSON.parse(subjects || '[]'); }
     catch { return []; }
   },
 
-  _persist: async (classId, subjects) => {
+  _persist: async (classId, session, term, subjects) => {
     await pool.query(
-      'UPDATE class_subjects SET subjects=$1, "updatedAt"=NOW() WHERE "classId"=$2',
-      [JSON.stringify(subjects), classId]
+      `UPDATE class_subjects SET subjects=$1, "updatedAt"=NOW()
+       WHERE "classId"=$2 AND session=$3 AND term=$4`,
+      [JSON.stringify(subjects), classId, session, term]
     );
   },
 
-  add: async (classId, rawName) => {
-    const subjects = await ClassSubjects.getOne(classId);
+  add: async (classId, session, term, rawName) => {
+    const subjects = await ClassSubjects.getOne(classId, session, term);
     if (subjects === null) throw httpError(404, 'Class not found');
     const name = (rawName || '').trim();
     if (!name) throw httpError(400, 'Subject name cannot be empty');
     if (subjects.some(s => s.toLowerCase() === name.toLowerCase()))
       throw httpError(409, 'That subject already exists in this class');
     subjects.push(name);
-    await ClassSubjects._persist(classId, subjects);
+    await ClassSubjects._persist(classId, session, term, subjects);
     return subjects;
   },
 
-  remove: async (classId, name) => {
-    const subjects = await ClassSubjects.getOne(classId);
+  remove: async (classId, session, term, name) => {
+    const subjects = await ClassSubjects.getOne(classId, session, term);
     if (subjects === null) throw httpError(404, 'Class not found');
     const idx = subjects.indexOf(name);
     if (idx < 0) throw httpError(404, 'Subject not found in this class');
     subjects.splice(idx, 1);
-    await ClassSubjects._persist(classId, subjects);
+    await ClassSubjects._persist(classId, session, term, subjects);
     return subjects;
   },
 
-  // Rename a subject AND migrate the score keys of every existing result for
-  // students in this class, so historical results follow the rename. Runs in a
-  // transaction: the subject list and all touched results commit together.
-  rename: async (classId, oldName, rawNewName) => {
-    const subjects = await ClassSubjects.getOne(classId);
+  // Rename a subject AND migrate the score keys of existing results for
+  // students in this class FOR THIS TERM ONLY, so other terms' historical
+  // results are untouched. Runs in a transaction: the subject list and all
+  // touched results commit together.
+  rename: async (classId, session, term, oldName, rawNewName) => {
+    const subjects = await ClassSubjects.getOne(classId, session, term);
     if (subjects === null) throw httpError(404, 'Class not found');
     const idx = subjects.indexOf(oldName);
     if (idx < 0) throw httpError(404, 'Subject not found in this class');
@@ -671,12 +763,14 @@ const ClassSubjects = {
     try {
       await client.query('BEGIN');
       await client.query(
-        'UPDATE class_subjects SET subjects=$1, "updatedAt"=NOW() WHERE "classId"=$2',
-        [JSON.stringify(subjects), classId]
+        `UPDATE class_subjects SET subjects=$1, "updatedAt"=NOW()
+         WHERE "classId"=$2 AND session=$3 AND term=$4`,
+        [JSON.stringify(subjects), classId, session, term]
       );
       const { rows } = await client.query(
-        'SELECT r.id, r.scores FROM results r JOIN students s ON s.id=r."studentId" WHERE s."classId"=$1',
-        [classId]
+        `SELECT r.id, r.scores FROM results r JOIN students s ON s.id=r."studentId"
+         WHERE s."classId"=$1 AND r.session=$2 AND r.term=$3`,
+        [classId, session, term]
       );
       for (const row of rows) {
         let scores;
@@ -699,12 +793,14 @@ const ClassSubjects = {
     return subjects;
   },
 
-  // How many saved results for this class carry a score under this subject.
-  // Used to warn the admin before removing a subject that has recorded data.
-  usageCount: async (classId, subject) => {
+  // How many saved results for this class, IN THIS TERM, carry a score under
+  // this subject. Used to warn the admin before removing a subject that has
+  // recorded data for the term they're currently editing.
+  usageCount: async (classId, session, term, subject) => {
     const { rows } = await pool.query(
-      'SELECT r.scores FROM results r JOIN students s ON s.id=r."studentId" WHERE s."classId"=$1',
-      [classId]
+      `SELECT r.scores FROM results r JOIN students s ON s.id=r."studentId"
+       WHERE s."classId"=$1 AND r.session=$2 AND r.term=$3`,
+      [classId, session, term]
     );
     let count = 0;
     for (const row of rows) {
