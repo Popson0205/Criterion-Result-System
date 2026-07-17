@@ -9,6 +9,30 @@ function isCrecheClass(classId) {
   return CRECHE_CLASSES.includes(classId);
 }
 
+// The two Creche classes score against a fixed, categorized skills list
+// (CRECHE_SECTIONS below) rather than the flat per-term subject list used by
+// every other class. That means subjects added/edited via the Subjects admin
+// page for Creche 1/2 were being saved to the database but never actually
+// shown anywhere. This merges any such subject in — as long as it isn't
+// already one of the built-in skills — under its own section, so it shows
+// up for scoring and on the printed report card.
+function getCrecheSections(classId) {
+  const base = CRECHE_SECTIONS[classId] || CRECHE_SECTIONS['Creche 1'];
+  const knownSkills = new Set();
+  base.sections.forEach(sec => sec.skills.forEach(sk => knownSkills.add(sk.toLowerCase())));
+
+  const dbSubjects = (typeof CLASS_SUBJECTS !== 'undefined' ? CLASS_SUBJECTS[classId] : null) || [];
+  const extra = dbSubjects.filter(s => !knownSkills.has(s.toLowerCase()));
+
+  if (extra.length === 0) return base;
+  return {
+    sections: [
+      ...base.sections,
+      { title: 'ADDITIONAL SUBJECTS', color: '#0588f0', skills: extra }
+    ]
+  };
+}
+
 // Sections and skills per class
 const CRECHE_SECTIONS = {
   'Creche 1': {
@@ -130,7 +154,7 @@ function getCrecheComment(ratings) {
 // ── CRECHE PRINT HTML ──────────────────────────────────────────
 function buildCrecheResultHTML(student, result) {
   const settings   = DB.getSettings();
-  const classDef   = CRECHE_SECTIONS[student.classId] || CRECHE_SECTIONS['Creche 1'];
+  const classDef   = getCrecheSections(student.classId);
   const ratings    = result.scores || {};
   const comment    = (result.principalComment && result.principalComment.trim())
                       ? result.principalComment

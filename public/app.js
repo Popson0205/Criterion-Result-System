@@ -1839,7 +1839,7 @@ function printAllClasses() {
 // CRECHE ENTRY FORM
 // ============================================================
 function renderCrecheEntryForm(student, existing, entrySession, entryTerm) {
-  const classDef = CRECHE_SECTIONS[student.classId] || CRECHE_SECTIONS['Creche 1'];
+  const classDef = getCrecheSections(student.classId);
   const ratings  = existing.scores || {};
 
   const sectionRows = classDef.sections.map(section => {
