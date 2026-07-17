@@ -787,10 +787,7 @@ function renderResults() {
     const clsStudents = students.filter(s=>s.classId===cls);
     const withAvg = clsStudents.map(s => {
       const r = DB.getResult(s.id, settings.session, settings.term);
-      if (!r) return { id:s.id, avg:0 };
-      const subjects = CLASS_SUBJECTS[cls]||[];
-      const { avg } = computeResult(r.scores||{}, subjects);
-      return { id:s.id, avg:parseFloat(avg)||0 };
+      return { id:s.id, avg: computeStudentAvg(s, r) };
     }).sort((a,b)=>b.avg-a.avg);
     withAvg.forEach((s,i) => { classRankings[s.id] = { rank:i+1, total:clsStudents.length }; });
   });
@@ -817,16 +814,27 @@ function renderResults() {
       <tbody>
         ${filtered.map(s => {
           const r = DB.getResult(s.id, settings.session, settings.term);
-          const subjects = CLASS_SUBJECTS[s.classId]||[];
-          const computed = r ? computeResult(r.scores||{}, subjects) : null;
           const rk = classRankings[s.id];
+          const avgDisplay = r ? computeStudentAvg(s, r).toFixed(2) : null;
+          let gradeDistHTML;
+          if (!r) {
+            gradeDistHTML = '<span style="color:var(--text-muted);">Not entered</span>';
+          } else if (isCrecheClass(s.classId)) {
+            const allSubjects = getCrecheSections(s.classId).sections.flatMap(sec=>sec.skills);
+            const { count } = computeCrecheResult(r.scores||{}, allSubjects);
+            gradeDistHTML = `<span style="color:var(--text-muted);">${count}/${allSubjects.length} rated</span>`;
+          } else {
+            const subjects = CLASS_SUBJECTS[s.classId]||[];
+            const computed = computeResult(r.scores||{}, subjects);
+            gradeDistHTML = Object.entries(computed.gradeCounts).filter(([,n])=>n>0).map(([g,n])=>`<span style="margin-right:4px;font-weight:600;">${g}:${n}</span>`).join('');
+          }
           return `<tr>
             <td style="font-weight:600;">${s.name}</td>
             <td><span class="badge">${s.classId}</span></td>
-            <td style="font-weight:700;color:#1a6e3c;">${computed ? computed.avg : '—'}</td>
-            <td style="font-weight:700;">${rk && computed ? getOrdinal(rk.rank) : '—'}</td>
+            <td style="font-weight:700;color:#1a6e3c;">${avgDisplay !== null ? avgDisplay : '—'}</td>
+            <td style="font-weight:700;">${rk && r ? getOrdinal(rk.rank) : '—'}</td>
             <td style="font-size:11px;">
-              ${computed ? Object.entries(computed.gradeCounts).filter(([,n])=>n>0).map(([g,n])=>`<span style="margin-right:4px;font-weight:600;">${g}:${n}</span>`).join('') : '<span style="color:var(--text-muted);">Not entered</span>'}
+              ${gradeDistHTML}
             </td>
             <td>
               <div style="display:flex;gap:6px;">
@@ -982,15 +990,12 @@ function renderPreviewResult() {
   const clsStudents = DB.getStudents().filter(s=>s.classId===student.classId);
   const ranked = clsStudents.map(s => {
     const r = DB.getResult(s.id, result.session, result.term);
-    if (!r) return { id:s.id, avg:0 };
-    if (isCrecheClass(s.classId)) return { id:s.id, avg:0 };
-    const { avg } = computeResult(r.scores||{}, CLASS_SUBJECTS[s.classId]||[]);
-    return { id:s.id, avg:parseFloat(avg)||0 };
+    return { id:s.id, avg: computeStudentAvg(s, r) };
   }).sort((a,b)=>b.avg-a.avg);
   const rank = ranked.findIndex(s=>s.id===student.id)+1;
 
   const html = isCrecheClass(student.classId)
-    ? buildCrecheResultHTML(student, result)
+    ? buildCrecheResultHTML(student, result, rank, clsStudents.length)
     : buildResultHTML(student, result, rank, clsStudents.length, false);
 
   return `
@@ -1019,14 +1024,12 @@ function renderPublicResult() {
   const clsStudents = DB.getStudents().filter(s=>s.classId===student.classId);
   const ranked = clsStudents.map(s => {
     const r = DB.getResult(s.id, t.session, t.term);
-    if (!r) return {id:s.id,avg:0};
-    const {avg} = computeResult(r.scores||{}, CLASS_SUBJECTS[s.classId]||[]);
-    return {id:s.id,avg:parseFloat(avg)||0};
+    return {id:s.id, avg: computeStudentAvg(s, r)};
   }).sort((a,b)=>b.avg-a.avg);
   const rank = ranked.findIndex(s=>s.id===student.id)+1;
 
   const html = isCrecheClass(student.classId)
-    ? buildCrecheResultHTML(student, result)
+    ? buildCrecheResultHTML(student, result, rank, clsStudents.length)
     : buildResultHTML(student, result, rank, clsStudents.length, false);
   document.open(); document.write(html); document.close();
   return '';
@@ -1258,12 +1261,11 @@ function printResult(studentId) {
   const allHaveResults = clsWithResults.length === clsStudents.length && clsStudents.length > 0;
   const ranked = clsWithResults.map(s => {
     const r = DB.getResult(s.id, settings.session, settings.term);
-    const {avg} = computeResult(r.scores||{}, CLASS_SUBJECTS[s.classId]||[]);
-    return {id:s.id,avg:parseFloat(avg)||0};
+    return {id:s.id, avg: computeStudentAvg(s, r)};
   }).sort((a,b)=>b.avg-a.avg);
   const rank = allHaveResults ? ranked.findIndex(s=>s.id===studentId)+1 : 0;
   const html = isCrecheClass(student.classId)
-    ? buildCrecheResultHTML(student, result)
+    ? buildCrecheResultHTML(student, result, rank, clsWithResults.length)
     : buildResultHTML(student, result, rank, clsWithResults.length, true);
   const win = window.open('','_blank');
   win.document.write(html);
@@ -1680,8 +1682,7 @@ function batchPrintClass(classId) {
   const allHaveResults = studentsWithResults.length === students.length && students.length > 0;
   const withAvg = studentsWithResults.map(s => {
     const r = DB.getResult(s.id, settings.session, settings.term);
-    const { avg } = computeResult(r.scores || {}, CLASS_SUBJECTS[classId] || []);
-    return { id: s.id, avg: parseFloat(avg) || 0 };
+    return { id: s.id, avg: computeStudentAvg(s, r) };
   }).sort((a, b) => b.avg - a.avg);
 
   const rankMap = {};
@@ -1694,7 +1695,7 @@ function batchPrintClass(classId) {
     const r = DB.getResult(s.id, settings.session, settings.term);
     const rank = allHaveResults ? rankMap[s.id] : 0;
     if (isCrecheClass(classId)) {
-      pages.push(buildCrecheResultHTML(s, r));
+      pages.push(buildCrecheResultHTML(s, r, rank, totalRanked));
     } else {
       pages.push(buildResultHTML(s, r, rank, totalRanked, true));
     }
@@ -1806,8 +1807,7 @@ function printAllClasses() {
     const allHaveResults = clsWithResults.length === clsStudents.length && clsStudents.length > 0;
     const withAvg = clsWithResults.map(s => {
       const r = DB.getResult(s.id, settings.session, settings.term);
-      const { avg } = computeResult(r.scores || {}, CLASS_SUBJECTS[cls] || []);
-      return { id: s.id, avg: parseFloat(avg) || 0 };
+      return { id: s.id, avg: computeStudentAvg(s, r) };
     }).sort((a, b) => b.avg - a.avg);
 
     const rankMap = {};
@@ -1818,7 +1818,7 @@ function printAllClasses() {
       const r = DB.getResult(s.id, settings.session, settings.term);
       const rank = allHaveResults ? rankMap[s.id] : 0;
       if (isCrecheClass(cls)) {
-        pages.push(buildCrecheResultHTML(s, r));
+        pages.push(buildCrecheResultHTML(s, r, rank, totalRanked));
       } else {
         pages.push(buildResultHTML(s, r, rank, totalRanked, true));
       }
@@ -1841,36 +1841,41 @@ function printAllClasses() {
 function renderCrecheEntryForm(student, existing, entrySession, entryTerm) {
   const classDef = getCrecheSections(student.classId);
   const ratings  = existing.scores || {};
+  const allSubjects = classDef.sections.flatMap(s => s.skills);
+  const { rows: computedRows, totalScore, count, avg } = computeCrecheResult(ratings, allSubjects);
+  const rowMap = {};
+  computedRows.forEach(r => { rowMap[r.sub] = r; });
 
   const sectionRows = classDef.sections.map(section => {
     const headerRow = `
       <tr>
-        <td colspan="2" style="background:${section.color};color:#fff;font-weight:700;font-size:13px;padding:8px 12px;text-align:left;">
+        <td colspan="5" style="background:${section.color};color:#fff;font-weight:700;font-size:13px;padding:8px 12px;text-align:left;">
           ${section.title}
         </td>
       </tr>`;
 
     const skillRows = section.skills.map((skill, i) => {
-      const rowBg  = i % 2 === 0 ? '#ffffff' : '#f5f5f5';
-      const ca   = ratings[skill]?.ca   ?? '';
-      const exam = ratings[skill]?.exam ?? '';
-      const total = (ca !== '' && exam !== '') ? parseFloat(ca||0) + parseFloat(exam||0) : '';
-      const grade = total !== '' ? getCrecheGrade(total) : null;
+      const rowBg = i % 2 === 0 ? '#ffffff' : '#f5f5f5';
+      const row   = rowMap[skill] || {};
+      const grade = row.has ? { rating: row.rating, color: row.color } : null;
       return `<tr style="background:${rowBg};" data-creche-row="${skill}">
-        <td style="text-align:left;padding:7px 12px;font-weight:500;font-size:13px;width:40%;color:#111;">${skill}</td>
-        <td style="padding:5px 8px;width:15%;">
+        <td style="text-align:left;padding:7px 12px;font-weight:500;font-size:13px;width:32%;color:#111;">${skill}</td>
+        <td style="padding:5px 8px;width:13%;">
           <input type="number" class="score-inp creche-ca" min="0" max="40"
             data-sub="${skill}" data-type="ca"
-            value="${ca}" placeholder="0-40"
+            value="${row.ca !== undefined ? row.ca : ''}" placeholder="0-40"
             style="width:64px;text-align:center;padding:4px 6px;border:1.5px solid #aaa;border-radius:6px;background:#fff;color:#111;font-size:14px;"
             oninput="updateCrecheRow(this)" />
         </td>
-        <td style="padding:5px 8px;width:15%;">
+        <td style="padding:5px 8px;width:13%;">
           <input type="number" class="score-inp creche-exam" min="0" max="60"
             data-sub="${skill}" data-type="exam"
-            value="${exam}" placeholder="0-60"
+            value="${row.exam !== undefined ? row.exam : ''}" placeholder="0-60"
             style="width:64px;text-align:center;padding:4px 6px;border:1.5px solid #aaa;border-radius:6px;background:#fff;color:#111;font-size:14px;"
             oninput="updateCrecheRow(this)" />
+        </td>
+        <td class="creche-total-cell" data-sub="${skill}" style="padding:7px 12px;font-weight:700;font-size:13px;color:#111;">
+          ${row.total !== undefined ? row.total : ''}
         </td>
         <td class="creche-grade-cell" data-sub="${skill}" style="padding:7px 12px;font-weight:bold;font-size:13px;color:${grade?grade.color:'#888'};">
           ${grade ? grade.rating : '—'}
@@ -1914,20 +1919,29 @@ function renderCrecheEntryForm(student, existing, entrySession, entryTerm) {
   </div>
 
   <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px;">
-    <div style="padding:12px 16px;background:#00B050;color:white;font-weight:600;font-size:13px;">
-      Skills &amp; Character Ratings — ${student.classId}
+    <div style="padding:12px 16px;background:#00B050;color:white;font-weight:600;font-size:13px;display:flex;justify-content:space-between;align-items:center;">
+      <span>Skills &amp; Character Ratings — ${student.classId}</span>
+      <span id="creche-entry-progress" style="font-size:12px;">${count}/${allSubjects.length} entered</span>
     </div>
     <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;">
         <thead>
           <tr style="background:#e8f5e9;">
-            <th style="text-align:left;padding:8px 12px;font-size:12px;color:#1a6e3c;text-transform:uppercase;letter-spacing:0.5px;width:40%;">Skill / Area</th>
-            <th style="padding:8px 12px;font-size:12px;color:#1a6e3c;text-transform:uppercase;letter-spacing:0.5px;width:15%;">CA /40</th>
-            <th style="padding:8px 12px;font-size:12px;color:#1a6e3c;text-transform:uppercase;letter-spacing:0.5px;width:15%;">Exam /60</th>
-            <th style="padding:8px 12px;font-size:12px;color:#1a6e3c;text-transform:uppercase;letter-spacing:0.5px;width:30%;">Rating</th>
+            <th style="text-align:left;padding:8px 12px;font-size:12px;color:#1a6e3c;text-transform:uppercase;letter-spacing:0.5px;width:32%;">Skill / Area</th>
+            <th style="padding:8px 12px;font-size:12px;color:#1a6e3c;text-transform:uppercase;letter-spacing:0.5px;width:13%;">CA /40</th>
+            <th style="padding:8px 12px;font-size:12px;color:#1a6e3c;text-transform:uppercase;letter-spacing:0.5px;width:13%;">Exam /60</th>
+            <th style="padding:8px 12px;font-size:12px;color:#1a6e3c;text-transform:uppercase;letter-spacing:0.5px;width:14%;">Total</th>
+            <th style="padding:8px 12px;font-size:12px;color:#1a6e3c;text-transform:uppercase;letter-spacing:0.5px;width:28%;">Rating</th>
           </tr>
         </thead>
         <tbody>${sectionRows}</tbody>
+        <tfoot>
+          <tr style="background:#00623a;color:white;font-weight:bold;">
+            <td style="padding:6px 10px;" colspan="3">Total</td>
+            <td id="creche-foot-total" style="text-align:center;">${totalScore||''}</td>
+            <td id="creche-foot-avg" style="text-align:center;">Avg: ${avg}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   </div>
@@ -1955,21 +1969,43 @@ function updateCrecheRow(input) {
   const sub  = input.dataset.sub;
   const row  = document.querySelector(`tr[data-creche-row="${sub}"]`);
   if (!row) return;
-  const caEl   = row.querySelector('.creche-ca');
-  const examEl = row.querySelector('.creche-exam');
+  const caEl    = row.querySelector('.creche-ca');
+  const examEl  = row.querySelector('.creche-exam');
+  const totalEl = row.querySelector('.creche-total-cell');
   const gradeEl = row.querySelector('.creche-grade-cell');
-  if (!caEl || !examEl || !gradeEl) return;
+  if (!caEl || !examEl || !totalEl || !gradeEl) return;
   const ca   = parseFloat(caEl.value)   || 0;
   const exam = parseFloat(examEl.value) || 0;
   const has  = caEl.value !== '' && examEl.value !== '';
   if (has) {
     const { rating, color } = getCrecheGrade(ca + exam);
+    totalEl.textContent = ca + exam;
     gradeEl.textContent = rating;
     gradeEl.style.color = color;
   } else {
+    totalEl.textContent = '';
     gradeEl.textContent = '—';
     gradeEl.style.color = '#aaa';
   }
+
+  // Recompute the footer totals across every skill row currently on screen.
+  let totalScore = 0, count = 0, entered = 0;
+  document.querySelectorAll('[data-creche-row]').forEach(r => {
+    const c = r.querySelector('.creche-ca')?.value;
+    const e = r.querySelector('.creche-exam')?.value;
+    entered++;
+    if (c !== '' && c !== undefined && e !== '' && e !== undefined) {
+      totalScore += (parseFloat(c)||0) + (parseFloat(e)||0);
+      count++;
+    }
+  });
+  const avg = count > 0 ? (totalScore/count).toFixed(2) : '0.00';
+  const footTotal = document.getElementById('creche-foot-total');
+  const footAvg   = document.getElementById('creche-foot-avg');
+  const progress  = document.getElementById('creche-entry-progress');
+  if (footTotal) footTotal.textContent = totalScore || '';
+  if (footAvg)   footAvg.textContent   = 'Avg: ' + avg;
+  if (progress)  progress.textContent  = count + '/' + entered + ' entered';
 }
 
 async function saveCrecheResult(andPreview=false) {

@@ -109,6 +109,20 @@ const CRECHE_SECTIONS = {
 const RATING_OPTIONS = ['Outstanding', 'Very Good', 'Good', 'Fair', 'Poor'];
 
 // Score-based grading for Creche: CA(40) + Exam(60) = Total(100)
+// Average score for one student's result, regardless of class type — used
+// for class-wide ranking so Creche classes get a position the same way
+// every other class does.
+function computeStudentAvg(student, result) {
+  if (!result) return 0;
+  if (isCrecheClass(student.classId)) {
+    const allSubjects = getCrecheSections(student.classId).sections.flatMap(s => s.skills);
+    const { avg } = computeCrecheResult(result.scores || {}, allSubjects);
+    return parseFloat(avg) || 0;
+  }
+  const { avg } = computeResult(result.scores || {}, CLASS_SUBJECTS[student.classId] || []);
+  return parseFloat(avg) || 0;
+}
+
 function getCrecheGrade(total) {
   const t = parseFloat(total) || 0;
   if (t > 70)  return { rating: 'Outstanding', color: '#1a6e3c' };
@@ -119,6 +133,7 @@ function getCrecheGrade(total) {
 
 // Compute Creche result from CA+Exam scores
 function computeCrecheResult(scores, subjects) {
+  let totalScore = 0, count = 0;
   const rows = subjects.map(sub => {
     const ca   = parseFloat(scores[sub]?.ca)   || 0;
     const exam = parseFloat(scores[sub]?.exam) || 0;
@@ -126,9 +141,11 @@ function computeCrecheResult(scores, subjects) {
     const has = scores[sub]?.ca !== undefined && scores[sub]?.ca !== ''
              && scores[sub]?.exam !== undefined && scores[sub]?.exam !== '';
     const { rating, color } = getCrecheGrade(total);
+    if (has) { totalScore += total; count++; }
     return { sub, ca: has ? ca : '', exam: has ? exam : '', total: has ? total : '', rating: has ? rating : '', color: has ? color : '', has };
   });
-  return rows;
+  const avg = count > 0 ? (totalScore / count).toFixed(2) : '0.00';
+  return { rows, totalScore, count, avg };
 }
 
 // Auto-comment for Creche (based on overall rating quality)
@@ -151,13 +168,16 @@ function getCrecheComment(ratings) {
 }
 
 // ── CRECHE PRINT HTML ──────────────────────────────────────────
-function buildCrecheResultHTML(student, result) {
+function buildCrecheResultHTML(student, result, position, totalStudents) {
   const settings   = DB.getSettings();
   const classDef   = getCrecheSections(student.classId);
   const ratings    = result.scores || {};
   const comment    = (result.principalComment && result.principalComment.trim())
                       ? result.principalComment
                       : getCrecheComment(ratings);
+
+  // Only top 5 get a position shown, matching how other classes' report cards work.
+  const posStr = (position && position <= 5) ? getOrdinal(position) : '';
 
   const resumptionFormatted = settings.resumptionDate
     ? new Date(settings.resumptionDate).toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' })
@@ -183,14 +203,14 @@ function buildCrecheResultHTML(student, result) {
 
   // Build skill sections using CA+Exam scores → auto-grade
   const allSubjects = classDef.sections.flatMap(s => s.skills);
-  const computedRows = computeCrecheResult(ratings, allSubjects);
+  const { rows: computedRows, avg } = computeCrecheResult(ratings, allSubjects);
   const rowMap = {};
   computedRows.forEach(r => { rowMap[r.sub] = r; });
 
   const sectionsHTML = classDef.sections.map(section => {
     const headerRow = `
       <tr>
-        <td colspan="4" style="background:${section.color};color:#fff;font-size:15px;font-weight:bold;padding:9px 14px;text-align:left;border:1.5px solid #555;letter-spacing:0.5px;">${section.title}</td>
+        <td colspan="5" style="background:${section.color};color:#fff;font-size:15px;font-weight:bold;padding:9px 14px;text-align:left;border:1.5px solid #555;letter-spacing:0.5px;">${section.title}</td>
       </tr>`;
 
     const skillRows = section.skills.map((skill, i) => {
@@ -198,10 +218,11 @@ function buildCrecheResultHTML(student, result) {
       const row = rowMap[skill] || {};
 
       return `<tr>
-        <td style="background:${bg};text-align:left;padding:9px 14px;font-size:14px;border:1.5px solid #999;width:40%;">${skill}</td>
-        <td style="background:${bg};text-align:center;padding:9px 14px;font-size:13px;border:1.5px solid #999;width:15%;">${row.ca !== undefined ? row.ca : ''}</td>
-        <td style="background:${bg};text-align:center;padding:9px 14px;font-size:13px;border:1.5px solid #999;width:15%;">${row.exam !== undefined ? row.exam : ''}</td>
-        <td style="background:${bg};text-align:center;padding:9px 14px;font-size:14px;font-weight:bold;color:${row.color||'#333'};border:1.5px solid #999;width:30%;">${row.rating || ''}</td>
+        <td style="background:${bg};text-align:left;padding:9px 14px;font-size:14px;border:1.5px solid #999;width:32%;">${skill}</td>
+        <td style="background:${bg};text-align:center;padding:9px 14px;font-size:13px;border:1.5px solid #999;width:13%;">${row.ca !== undefined ? row.ca : ''}</td>
+        <td style="background:${bg};text-align:center;padding:9px 14px;font-size:13px;border:1.5px solid #999;width:13%;">${row.exam !== undefined ? row.exam : ''}</td>
+        <td style="background:${bg};text-align:center;padding:9px 14px;font-size:14px;font-weight:bold;border:1.5px solid #999;width:14%;">${row.total !== undefined ? row.total : ''}</td>
+        <td style="background:${bg};text-align:center;padding:9px 14px;font-size:14px;font-weight:bold;color:${row.color||'#333'};border:1.5px solid #999;width:28%;">${row.rating || ''}</td>
       </tr>`;
     }).join('');
 
@@ -261,8 +282,16 @@ function buildCrecheResultHTML(student, result) {
     </tr>
     <tr>
       <td style="border:none;padding:4px 0;">
+        <span class="green" style="font-size:14px;">Average Score:&nbsp;</span><span class="dark" style="font-size:14px;">${avg}</span>
+        &nbsp;&nbsp;&nbsp;&nbsp;
+        <span class="green" style="font-size:14px;">Position:&nbsp;</span><span class="dark" style="font-size:14px;">${posStr}</span>
+      </td>
+      <td style="border:none;padding:4px 0;text-align:right;">
         <span class="green" style="font-size:14px;">Academic Session:&nbsp;</span><span class="dark" style="font-size:14px;">${result.session}</span>
       </td>
+    </tr>
+    <tr>
+      <td style="border:none;padding:4px 0;"></td>
       <td style="border:none;padding:4px 0;text-align:right;">
         <span class="green" style="font-size:14px;">Term:&nbsp;</span><span class="dark" style="font-size:14px;">${result.term}</span>
       </td>
@@ -282,10 +311,11 @@ function buildCrecheResultHTML(student, result) {
   <table style="margin-bottom:16px;border:1.5px solid #555;">
     <thead>
       <tr>
-        <th style="background:#00B050;color:#fff;text-align:left;padding:7px 14px;font-size:13px;border:1.5px solid #555;width:40%;">SKILL / AREA</th>
-        <th style="background:#00B050;color:#fff;padding:7px;font-size:13px;border:1.5px solid #555;width:15%;">CA /40</th>
-        <th style="background:#00B050;color:#fff;padding:7px;font-size:13px;border:1.5px solid #555;width:15%;">EXAM /60</th>
-        <th style="background:#00B050;color:#fff;padding:7px;font-size:13px;border:1.5px solid #555;width:30%;">RATING</th>
+        <th style="background:#00B050;color:#fff;text-align:left;padding:7px 14px;font-size:13px;border:1.5px solid #555;width:32%;">SKILL / AREA</th>
+        <th style="background:#00B050;color:#fff;padding:7px;font-size:13px;border:1.5px solid #555;width:13%;">CA /40</th>
+        <th style="background:#00B050;color:#fff;padding:7px;font-size:13px;border:1.5px solid #555;width:13%;">EXAM /60</th>
+        <th style="background:#00B050;color:#fff;padding:7px;font-size:13px;border:1.5px solid #555;width:14%;">TOTAL</th>
+        <th style="background:#00B050;color:#fff;padding:7px;font-size:13px;border:1.5px solid #555;width:28%;">RATING</th>
       </tr>
     </thead>
     ${sectionsHTML}
