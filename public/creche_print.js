@@ -26,10 +26,9 @@ function getCrecheSections(classId) {
 
   if (extra.length === 0) return base;
   return {
-    sections: [
-      ...base.sections,
-      { title: 'ADDITIONAL SUBJECTS', color: '#0588f0', skills: extra }
-    ]
+    sections: base.sections.map((sec, i) =>
+      i === 0 ? { ...sec, skills: [...sec.skills, ...extra] } : sec
+    )
   };
 }
 
