@@ -113,7 +113,7 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
 
   // Stamp — just the uploaded image, no fake box
   const stampBoxHTML = settings.stampImage
-    ? `<img src="${settings.stampImage}" style="width:100%;max-width:220px;height:auto;min-height:80px;object-fit:fill;display:block;" />`
+    ? `<img src="${settings.stampImage}" style="max-width:220px;max-height:70px;width:auto;height:auto;object-fit:contain;display:block;" />`
     : `<div style="width:220px;height:80px;border:2px dashed #ccc;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;color:#ccc;text-align:center;">Upload<br/>Stamp</div>`;
 
   // Watermark

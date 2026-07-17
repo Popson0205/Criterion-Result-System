@@ -192,7 +192,7 @@ function buildCrecheResultHTML(student, result, position, totalStudents) {
     : `<div style="width:90px;height:105px;border:2.5px dashed #00B050;display:flex;align-items:center;justify-content:center;font-size:11px;color:#aaa;text-align:center;border-radius:3px;line-height:1.6;font-family:'Times New Roman',serif;">Passport<br/>Photo</div>`;
 
   const stampHTML = settings.stampImage
-    ? `<img src="${settings.stampImage}" style="width:100%;max-width:220px;height:auto;min-height:80px;object-fit:fill;display:block;" />`
+    ? `<img src="${settings.stampImage}" style="max-width:220px;max-height:70px;width:auto;height:auto;object-fit:contain;display:block;" />`
     : '';
 
   const watermarkHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
