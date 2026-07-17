@@ -14,7 +14,19 @@ const SECRET = process.env.JWT_SECRET || 'criterion-secret-change-in-production'
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      // Never cache HTML — every visit checks for the latest version
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    } else if (/\.(js|css)$/.test(filePath)) {
+      // Cache JS/CSS briefly — short enough that a redeploy is picked up fast
+      res.setHeader('Cache-Control', 'public, max-age=300');
+    }
+  }
+}));
 
 // ── Auth Middleware ───────────────────────────────────────────
 function requireAuth(req, res, next) {
