@@ -130,10 +130,11 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
   // keep tighter spacing so they still fit one page.
   const subjectCount = rows.length;
   let sizeScale;
-  if      (subjectCount <= 6)  sizeScale = 1.20;
-  else if (subjectCount <= 8)  sizeScale = 1.10;
-  else if (subjectCount <= 10) sizeScale = 1.0;
-  else                          sizeScale = 0.92;
+  if      (subjectCount <= 6)  sizeScale = 1.35;
+  else if (subjectCount <= 8)  sizeScale = 1.25;
+  else if (subjectCount <= 10) sizeScale = 1.15;
+  else if (subjectCount <= 13) sizeScale = 1.08;
+  else                          sizeScale = 1.0;
 
   const rowFontPx  = Math.round(12 * sizeScale);
   const rowPadV    = Math.max(2, Math.round(3 * sizeScale));
