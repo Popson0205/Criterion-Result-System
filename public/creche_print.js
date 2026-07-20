@@ -210,7 +210,7 @@ function buildCrecheResultHTML(student, result, position, totalStudents) {
   const sectionsHTML = classDef.sections.map(section => {
     const headerRow = `
       <tr>
-        <td colspan="5" style="background:${section.color};color:#fff;font-size:15px;font-weight:bold;padding:6px 14px;text-align:left;border:1.5px solid #555;letter-spacing:0.5px;">${section.title}</td>
+        <td colspan="5" style="background:${section.color};color:#fff;font-size:16px;font-weight:bold;padding:7px 14px;text-align:left;border:1.5px solid #555;letter-spacing:0.5px;">${section.title}</td>
       </tr>`;
 
     const skillRows = section.skills.map((skill, i) => {
@@ -218,11 +218,11 @@ function buildCrecheResultHTML(student, result, position, totalStudents) {
       const row = rowMap[skill] || {};
 
       return `<tr>
-        <td style="background:${bg};text-align:left;padding:6px 14px;font-size:14px;border:1.5px solid #999;width:32%;">${skill}</td>
-        <td style="background:${bg};text-align:center;padding:6px 14px;font-size:13px;border:1.5px solid #999;width:13%;">${row.ca !== undefined ? row.ca : ''}</td>
-        <td style="background:${bg};text-align:center;padding:6px 14px;font-size:13px;border:1.5px solid #999;width:13%;">${row.exam !== undefined ? row.exam : ''}</td>
-        <td style="background:${bg};text-align:center;padding:6px 14px;font-size:14px;font-weight:bold;border:1.5px solid #999;width:14%;">${row.total !== undefined ? row.total : ''}</td>
-        <td style="background:${bg};text-align:center;padding:6px 14px;font-size:14px;font-weight:bold;color:${row.color||'#333'};border:1.5px solid #999;width:28%;">${row.rating || ''}</td>
+        <td style="background:${bg};text-align:left;padding:7px 14px;font-size:15px;border:1.5px solid #999;width:32%;">${skill}</td>
+        <td style="background:${bg};text-align:center;padding:7px 14px;font-size:14px;border:1.5px solid #999;width:13%;">${row.ca !== undefined ? row.ca : ''}</td>
+        <td style="background:${bg};text-align:center;padding:7px 14px;font-size:14px;border:1.5px solid #999;width:13%;">${row.exam !== undefined ? row.exam : ''}</td>
+        <td style="background:${bg};text-align:center;padding:7px 14px;font-size:15px;font-weight:bold;border:1.5px solid #999;width:14%;">${row.total !== undefined ? row.total : ''}</td>
+        <td style="background:${bg};text-align:center;padding:7px 14px;font-size:15px;font-weight:bold;color:${row.color||'#333'};border:1.5px solid #999;width:28%;">${row.rating || ''}</td>
       </tr>`;
     }).join('');
 
@@ -274,26 +274,26 @@ function buildCrecheResultHTML(student, result, position, totalStudents) {
   <table style="border:none;margin-bottom:6px;border-top:1.5px solid #00B050;border-bottom:1.5px solid #00B050;">
     <tr>
       <td style="border:none;padding:3px 0;width:65%;">
-        <span class="green" style="font-size:15px;">Student's/Pupil's Name:&nbsp;</span><span class="red" style="font-size:15px;">${student.name.toUpperCase()}</span>
+        <span class="green" style="font-size:16px;">Student's/Pupil's Name:&nbsp;</span><span class="red" style="font-size:16px;">${student.name.toUpperCase()}</span>
       </td>
       <td style="border:none;padding:3px 0;text-align:right;">
-        <span class="green" style="font-size:15px;">Class:&nbsp;</span><span class="dark" style="font-size:15px;">${student.classId}</span>
+        <span class="green" style="font-size:16px;">Class:&nbsp;</span><span class="dark" style="font-size:16px;">${student.classId}</span>
       </td>
     </tr>
     <tr>
       <td style="border:none;padding:2px 0;">
-        <span class="green" style="font-size:14px;">Average Score:&nbsp;</span><span class="dark" style="font-size:14px;">${avg}</span>
+        <span class="green" style="font-size:15px;">Average Score:&nbsp;</span><span class="dark" style="font-size:15px;">${avg}</span>
         &nbsp;&nbsp;&nbsp;&nbsp;
-        <span class="green" style="font-size:14px;">Position:&nbsp;</span><span class="dark" style="font-size:14px;">${posStr}</span>
+        <span class="green" style="font-size:15px;">Position:&nbsp;</span><span class="dark" style="font-size:15px;">${posStr}</span>
       </td>
       <td style="border:none;padding:2px 0;text-align:right;">
-        <span class="green" style="font-size:14px;">Academic Session:&nbsp;</span><span class="dark" style="font-size:14px;">${result.session}</span>
+        <span class="green" style="font-size:15px;">Academic Session:&nbsp;</span><span class="dark" style="font-size:15px;">${result.session}</span>
       </td>
     </tr>
     <tr>
       <td style="border:none;padding:2px 0;"></td>
       <td style="border:none;padding:2px 0;text-align:right;">
-        <span class="green" style="font-size:14px;">Term:&nbsp;</span><span class="dark" style="font-size:14px;">${result.term}</span>
+        <span class="green" style="font-size:15px;">Term:&nbsp;</span><span class="dark" style="font-size:15px;">${result.term}</span>
       </td>
     </tr>
   </table>
@@ -311,11 +311,11 @@ function buildCrecheResultHTML(student, result, position, totalStudents) {
   <table style="margin-bottom:8px;border:1.5px solid #555;">
     <thead>
       <tr>
-        <th style="background:#00B050;color:#fff;text-align:left;padding:5px 14px;font-size:13px;border:1.5px solid #555;width:32%;">SKILL / AREA</th>
-        <th style="background:#00B050;color:#fff;padding:5px;font-size:13px;border:1.5px solid #555;width:13%;">CA /40</th>
-        <th style="background:#00B050;color:#fff;padding:5px;font-size:13px;border:1.5px solid #555;width:13%;">EXAM /60</th>
-        <th style="background:#00B050;color:#fff;padding:5px;font-size:13px;border:1.5px solid #555;width:14%;">TOTAL</th>
-        <th style="background:#00B050;color:#fff;padding:5px;font-size:13px;border:1.5px solid #555;width:28%;">RATING</th>
+        <th style="background:#00B050;color:#fff;text-align:left;padding:6px 14px;font-size:14px;border:1.5px solid #555;width:32%;">SKILL / AREA</th>
+        <th style="background:#00B050;color:#fff;padding:6px;font-size:14px;border:1.5px solid #555;width:13%;">CA /40</th>
+        <th style="background:#00B050;color:#fff;padding:6px;font-size:14px;border:1.5px solid #555;width:13%;">EXAM /60</th>
+        <th style="background:#00B050;color:#fff;padding:6px;font-size:14px;border:1.5px solid #555;width:14%;">TOTAL</th>
+        <th style="background:#00B050;color:#fff;padding:6px;font-size:14px;border:1.5px solid #555;width:28%;">RATING</th>
       </tr>
     </thead>
     ${sectionsHTML}
@@ -325,23 +325,23 @@ function buildCrecheResultHTML(student, result, position, totalStudents) {
   <table style="border:none;border-top:1px solid #ccc;border-bottom:1px solid #ccc;width:100%;margin-bottom:0;">
     <tr>
       <td style="border:none;border-right:1px solid #999;width:38%;padding:5px 10px 5px 0;vertical-align:top;">
-        <div style="font-size:14px;font-style:italic;color:#333;font-weight:bold;">Principal's Comments</div>
+        <div style="font-size:15px;font-style:italic;color:#333;font-weight:bold;">Principal's Comments</div>
       </td>
-      <td style="border:none;padding:5px 0 5px 12px;vertical-align:top;font-size:13px;color:#333;line-height:1.4;">
+      <td style="border:none;padding:5px 0 5px 12px;vertical-align:top;font-size:14px;color:#333;line-height:1.5;">
         ${comment}
       </td>
     </tr>
     <tr>
       <td style="border:none;border-right:1px solid #999;border-top:1px solid #eee;padding:5px 10px 5px 0;vertical-align:middle;">
-        <div style="font-size:14px;font-style:italic;color:#333;font-weight:bold;">Next School Resumption Date</div>
+        <div style="font-size:15px;font-style:italic;color:#333;font-weight:bold;">Next School Resumption Date</div>
       </td>
-      <td style="border:none;border-top:1px solid #eee;padding:5px 0 5px 12px;vertical-align:middle;font-size:14px;font-weight:bold;color:#181717;">
+      <td style="border:none;border-top:1px solid #eee;padding:5px 0 5px 12px;vertical-align:middle;font-size:15px;font-weight:bold;color:#181717;">
         ${resumptionFormatted}
       </td>
     </tr>
     <tr>
       <td style="border:none;border-right:1px solid #999;border-top:1px solid #eee;padding:5px 10px 5px 0;vertical-align:middle;">
-        <div style="font-size:14px;font-style:italic;color:#333;font-weight:bold;">Signature, Stamp and Date</div>
+        <div style="font-size:15px;font-style:italic;color:#333;font-weight:bold;">Signature, Stamp and Date</div>
       </td>
       <td style="border:none;border-top:1px solid #eee;padding:3px 0 3px 12px;vertical-align:middle;">
         ${stampHTML}
@@ -349,7 +349,7 @@ function buildCrecheResultHTML(student, result, position, totalStudents) {
     </tr>
   </table>
 
-  <div style="text-align:center;font-size:11px;color:#888;font-style:italic;margin-top:4px;">
+  <div style="text-align:center;font-size:12px;color:#888;font-style:italic;margin-top:4px;">
     Any alteration whatsoever on this document renders it invalid!
   </div>
 
