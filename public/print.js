@@ -123,18 +123,41 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
        </div>`
     : '';
 
+  // Subject count varies a lot by class (5 subjects for lower classes, 15+ for
+  // senior classes). A flat font-size increase would be safe for a short list
+  // but could push a long list onto a second page. Scale size to row count
+  // instead — fewer subjects get bigger, easier-to-read text; longer lists
+  // keep tighter spacing so they still fit one page.
+  const subjectCount = rows.length;
+  let sizeScale;
+  if      (subjectCount <= 6)  sizeScale = 1.20;
+  else if (subjectCount <= 8)  sizeScale = 1.10;
+  else if (subjectCount <= 10) sizeScale = 1.0;
+  else                          sizeScale = 0.92;
+
+  const rowFontPx  = Math.round(12 * sizeScale);
+  const rowPadV    = Math.max(2, Math.round(3 * sizeScale));
+  const rowPadH    = Math.round(7 * sizeScale);
+  const headFontPx = Math.round(12 * sizeScale);
+  // The header/attendance/summary panels don't grow with subject count, so
+  // they get a lighter touch than the subject table — enough to feel
+  // consistent without ballooning fixed-size sections.
+  const lightScale = 1 + (sizeScale - 1) / 2;
+  const bodyFontPx = Math.round(11 * lightScale);
+  const nameFontPx = Math.round(14 * lightScale);
+
   // Subject rows
   const subjectRows = rows.map((r, i) => {
     const rowBg  = i % 2 === 0 ? '#C4D79B' : '#FFFFFF';
     const cellBg = i % 2 === 0 ? '#D8DB9C' : '#FAFAFA';
     return `<tr>
-      <td style="background:${rowBg};text-align:left;padding:3px 7px;font-size:12px;border:1px solid #999;">${r.sub}</td>
-      <td style="background:${cellBg};font-size:12px;border:1px solid #999;">${r.ca}</td>
-      <td style="background:${cellBg};font-size:12px;border:1px solid #999;">${r.exam}</td>
-      <td style="background:${cellBg};font-size:12px;font-weight:bold;border:1px solid #999;">${r.total}</td>
-      <td style="background:${cellBg};font-size:12px;border:1px solid #999;">${r.has ? avg : ''}</td>
-      <td style="background:${cellBg};font-size:12px;font-weight:bold;color:${r.color||'#000'};border:1px solid #999;">${r.grade}</td>
-      <td style="background:${cellBg};font-size:12px;border:1px solid #999;">${r.remark}</td>
+      <td style="background:${rowBg};text-align:left;padding:${rowPadV}px ${rowPadH}px;font-size:${rowFontPx}px;border:1px solid #999;">${r.sub}</td>
+      <td style="background:${cellBg};font-size:${rowFontPx}px;border:1px solid #999;">${r.ca}</td>
+      <td style="background:${cellBg};font-size:${rowFontPx}px;border:1px solid #999;">${r.exam}</td>
+      <td style="background:${cellBg};font-size:${rowFontPx}px;font-weight:bold;border:1px solid #999;">${r.total}</td>
+      <td style="background:${cellBg};font-size:${rowFontPx}px;border:1px solid #999;">${r.has ? avg : ''}</td>
+      <td style="background:${cellBg};font-size:${rowFontPx}px;font-weight:bold;color:${r.color||'#000'};border:1px solid #999;">${r.grade}</td>
+      <td style="background:${cellBg};font-size:${rowFontPx}px;border:1px solid #999;">${r.remark}</td>
     </tr>`;
   }).join('');
 
@@ -157,7 +180,7 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
   * { box-sizing: border-box; margin:0; padding:0; }
   body {
     font-family: Arial, sans-serif;
-    font-size: 11px;
+    font-size: ${bodyFontPx}px;
     color: #000;
     background: #fff;
     position: relative;
@@ -193,7 +216,7 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
   <table style="border:none;margin-bottom:3px;border-top:1px solid #55A845;border-bottom:1px solid #55A845;">
     <tr>
       <td style="border:none;padding:3px 0;width:60%;">
-        <span class="green" style="font-size:14px;">Student's Name:&nbsp;</span><span class="red">${student.name.toUpperCase()}</span>
+        <span class="green" style="font-size:${nameFontPx}px;">Student's Name:&nbsp;</span><span class="red">${student.name.toUpperCase()}</span>
       </td>
       <td style="border:none;padding:3px 0;text-align:right;">
         <span class="green">Class:&nbsp;</span><span class="dark">${student.classId}</span>
@@ -223,28 +246,28 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
   <table style="margin-bottom:0;border:1px solid #999;">
     <thead>
       <tr>
-        <th rowspan="2" style="text-align:center;width:25%;background:#55A845;color:#fff;font-size:12px;border:1px solid #999;vertical-align:middle;">SUBJECT</th>
-        <th style="background:#55A845;color:#fff;border:1px solid #999;">TEST</th>
-        <th style="background:#55A845;color:#fff;border:1px solid #999;">EXAM</th>
-        <th style="background:#55A845;color:#fff;border:1px solid #999;">TOTAL</th>
-        <th rowspan="2" style="background:#55A845;color:#fff;border:1px solid #999;vertical-align:middle;">AVRG</th>
-        <th rowspan="2" style="background:#55A845;color:#fff;border:1px solid #999;vertical-align:middle;">GRADE</th>
-        <th rowspan="2" style="background:#55A845;color:#fff;border:1px solid #999;vertical-align:middle;">RMKS</th>
+        <th rowspan="2" style="text-align:center;width:25%;background:#55A845;color:#fff;font-size:${headFontPx}px;border:1px solid #999;vertical-align:middle;">SUBJECT</th>
+        <th style="background:#55A845;color:#fff;border:1px solid #999;font-size:${headFontPx}px;">TEST</th>
+        <th style="background:#55A845;color:#fff;border:1px solid #999;font-size:${headFontPx}px;">EXAM</th>
+        <th style="background:#55A845;color:#fff;border:1px solid #999;font-size:${headFontPx}px;">TOTAL</th>
+        <th rowspan="2" style="background:#55A845;color:#fff;border:1px solid #999;vertical-align:middle;font-size:${headFontPx}px;">AVRG</th>
+        <th rowspan="2" style="background:#55A845;color:#fff;border:1px solid #999;vertical-align:middle;font-size:${headFontPx}px;">GRADE</th>
+        <th rowspan="2" style="background:#55A845;color:#fff;border:1px solid #999;vertical-align:middle;font-size:${headFontPx}px;">RMKS</th>
       </tr>
       <tr>
-        <th style="background:#6ab55a;color:#fff;border:1px solid #999;">40</th>
-        <th style="background:#6ab55a;color:#fff;border:1px solid #999;">60</th>
-        <th style="background:#6ab55a;color:#fff;border:1px solid #999;">100</th>
+        <th style="background:#6ab55a;color:#fff;border:1px solid #999;font-size:${headFontPx}px;">40</th>
+        <th style="background:#6ab55a;color:#fff;border:1px solid #999;font-size:${headFontPx}px;">60</th>
+        <th style="background:#6ab55a;color:#fff;border:1px solid #999;font-size:${headFontPx}px;">100</th>
       </tr>
     </thead>
     <tbody>${subjectRows}</tbody>
     <tfoot>
       <tr>
-        <td style="background:#D8DB9C;font-weight:bold;text-align:left;padding:3px 7px;border:1px solid #999;">Total</td>
-        <td style="background:#D8DB9C;font-weight:bold;border:1px solid #999;">${totalCA}</td>
-        <td style="background:#D8DB9C;font-weight:bold;border:1px solid #999;">${totalExam}</td>
-        <td style="background:#D8DB9C;font-weight:bold;border:1px solid #999;">${totalScore}</td>
-        <td style="background:#D8DB9C;font-weight:bold;border:1px solid #999;">${avg}</td>
+        <td style="background:#D8DB9C;font-weight:bold;text-align:left;padding:${rowPadV}px ${rowPadH}px;border:1px solid #999;font-size:${rowFontPx}px;">Total</td>
+        <td style="background:#D8DB9C;font-weight:bold;border:1px solid #999;font-size:${rowFontPx}px;">${totalCA}</td>
+        <td style="background:#D8DB9C;font-weight:bold;border:1px solid #999;font-size:${rowFontPx}px;">${totalExam}</td>
+        <td style="background:#D8DB9C;font-weight:bold;border:1px solid #999;font-size:${rowFontPx}px;">${totalScore}</td>
+        <td style="background:#D8DB9C;font-weight:bold;border:1px solid #999;font-size:${rowFontPx}px;">${avg}</td>
         <td style="background:#D8DB9C;border:1px solid #999;"></td>
         <td style="background:#D8DB9C;border:1px solid #999;"></td>
       </tr>
