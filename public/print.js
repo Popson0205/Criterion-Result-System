@@ -90,6 +90,19 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
   const subjects  = CLASS_SUBJECTS[student.classId] || [];
   const { rows, totalCA, totalExam, totalScore, count, avg, gradeCounts } = computeResult(result.scores || {}, subjects);
 
+  // Subject count varies a lot by class (5 subjects for lower classes, 15+ for
+  // senior classes). A flat font-size increase would be safe for a short list
+  // but could push a long list onto a second page. Scale size to row count
+  // instead — fewer subjects get bigger, easier-to-read text; longer lists
+  // keep tighter spacing so they still fit one page.
+  const subjectCount = rows.length;
+  let sizeScale;
+  if      (subjectCount <= 6)  sizeScale = 1.45;
+  else if (subjectCount <= 8)  sizeScale = 1.35;
+  else if (subjectCount <= 10) sizeScale = 1.25;
+  else if (subjectCount <= 13) sizeScale = 1.18;
+  else                          sizeScale = 1.10;
+
   const teacherComment   = (result.teacherComment   && result.teacherComment.trim())   ? result.teacherComment   : getTeacherComment(avg);
   const principalComment = (result.principalComment && result.principalComment.trim()) ? result.principalComment : getPrincipalComment(avg);
 
@@ -113,8 +126,8 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
 
   // Stamp — just the uploaded image, no fake box
   const stampBoxHTML = settings.stampImage
-    ? `<img src="${settings.stampImage}" style="max-width:220px;max-height:70px;width:auto;height:auto;object-fit:contain;display:block;" />`
-    : `<div style="width:220px;height:80px;border:2px dashed #ccc;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;color:#ccc;text-align:center;">Upload<br/>Stamp</div>`;
+    ? `<img src="${settings.stampImage}" style="max-width:${Math.round(220*sizeScale)}px;max-height:${Math.round(80*sizeScale)}px;width:auto;height:auto;object-fit:contain;display:block;" />`
+    : `<div style="width:${Math.round(220*sizeScale)}px;height:${Math.round(80*sizeScale)}px;border:2px dashed #ccc;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;color:#ccc;text-align:center;">Upload<br/>Stamp</div>`;
 
   // Watermark
   const watermarkHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
@@ -122,19 +135,6 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
         <img src="${SCHOOL_LOGO}" style="width:320px;height:320px;object-fit:contain;" />
        </div>`
     : '';
-
-  // Subject count varies a lot by class (5 subjects for lower classes, 15+ for
-  // senior classes). A flat font-size increase would be safe for a short list
-  // but could push a long list onto a second page. Scale size to row count
-  // instead — fewer subjects get bigger, easier-to-read text; longer lists
-  // keep tighter spacing so they still fit one page.
-  const subjectCount = rows.length;
-  let sizeScale;
-  if      (subjectCount <= 6)  sizeScale = 1.35;
-  else if (subjectCount <= 8)  sizeScale = 1.25;
-  else if (subjectCount <= 10) sizeScale = 1.15;
-  else if (subjectCount <= 13) sizeScale = 1.08;
-  else                          sizeScale = 1.0;
 
   const rowFontPx  = Math.round(12 * sizeScale);
   const rowPadV    = Math.max(2, Math.round(3 * sizeScale));
@@ -247,7 +247,7 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
   <table style="margin-bottom:0;border:1px solid #999;">
     <thead>
       <tr>
-        <th rowspan="2" style="text-align:center;width:25%;background:#55A845;color:#fff;font-size:${headFontPx}px;border:1px solid #999;vertical-align:middle;">SUBJECT</th>
+        <th rowspan="2" style="text-align:center;width:30%;background:#55A845;color:#fff;font-size:${headFontPx}px;border:1px solid #999;vertical-align:middle;">SUBJECT</th>
         <th style="background:#55A845;color:#fff;border:1px solid #999;font-size:${headFontPx}px;">TEST</th>
         <th style="background:#55A845;color:#fff;border:1px solid #999;font-size:${headFontPx}px;">EXAM</th>
         <th style="background:#55A845;color:#fff;border:1px solid #999;font-size:${headFontPx}px;">TOTAL</th>
