@@ -48,6 +48,16 @@ function navigate(page, params={}) {
   render();
   window.scrollTo(0,0);
 
+  if (page === 'graduated') {
+    // Section-completion / graduation milestones can be created by editing
+    // any student's class, not just via bulk promotion — refetch on every
+    // visit so the tab never shows stale history.
+    API.get('/api/milestones').then(rows => {
+      DB._milestones = rows || [];
+      if (currentPage === 'graduated') render();
+    });
+  }
+
   if (leavingSubjectsContext) {
     subjectsSession = '';
     subjectsTerm = '';
@@ -832,24 +842,51 @@ function renderGraduatedStudents() {
   const graduates = DB.getStudents()
     .filter(s => s.status === 'graduated')
     .sort((a, b) => a.name.localeCompare(b.name));
-  const allResults = DB.getResults();
+  const allResults   = DB.getResults();
+  const milestones   = DB.getMilestones();
+  const finalIds     = new Set(graduates.map(s => s.id));
+
+  // Section completions: students who finished Primary or Junior Secondary
+  // but are still active elsewhere in the school (e.g. Primary 4 → J.S.S 1,
+  // J.S.S 3 → S.S 1). Exclude anyone who has since fully left the school —
+  // they're already covered in the Final Graduates table below.
+  const sectionEvents = milestones
+    .filter(m => !m.final && !finalIds.has(m.studentId))
+    .map(m => ({ ...m, student: DB.getStudent(m.studentId) }))
+    .filter(m => m.student);
+
+  const resultChips = (studentId) => {
+    const history = allResults
+      .filter(r => r.studentId === studentId)
+      .sort((a, b) => (b.session || '').localeCompare(a.session || '') || TERMS.indexOf(b.term) - TERMS.indexOf(a.term));
+    if (history.length === 0) return `<span style="font-size:12px;color:var(--text-muted);">No results recorded</span>`;
+    return `<div style="display:flex;flex-wrap:wrap;gap:6px;">
+      ${history.map(r => `
+        <div style="display:flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:3px 6px;">
+          <span style="font-size:11px;font-weight:600;color:#1a6e3c;">${r.session} · ${r.term}</span>
+          <button class="btn btn-ghost btn-sm" style="padding:2px 6px;" title="Preview" onclick="previewGraduatedResult('${r.studentId}','${r.session}','${r.term}')">👁</button>
+          <button class="btn btn-ghost btn-sm" style="padding:2px 6px;" title="Print" onclick="printResult('${r.studentId}','${r.session}','${r.term}')">🖨️</button>
+        </div>`).join('')}
+    </div>`;
+  };
 
   return `
   <div class="page-header">
     <h1 class="page-title">🎓 Graduated Students</h1>
     <div style="display:flex;gap:8px;">
-      <div style="font-size:13px;color:var(--text-muted);align-self:center;">${graduates.length} graduate${graduates.length!==1?'s':''} on record</div>
+      <div style="font-size:13px;color:var(--text-muted);align-self:center;">${graduates.length} left the school · ${sectionEvents.length} section completion${sectionEvents.length!==1?'s':''}</div>
       <button class="btn btn-ghost" onclick="navigate('students')">← Back to Students</button>
     </div>
   </div>
 
-  <div class="card" style="margin-bottom:16px;padding:14px 18px;background:#eef2ff;border-left:4px solid #3730a3;">
+  <div class="card" style="margin-bottom:20px;padding:14px 18px;background:#eef2ff;border-left:4px solid #3730a3;">
     <div style="font-size:13px;color:#312e81;">
-      These students no longer count toward your current student totals or class rosters. Their details and every result they ever had are preserved here and can be viewed or printed at any time. Reinstate a student if they were graduated by mistake.
+      This tab records every graduation milestone — leaving the school entirely, and also completing Primary or Junior Secondary while continuing on elsewhere. Every result these students ever had is preserved and can be viewed or printed at any time.
     </div>
   </div>
 
-  <div class="card" style="padding:0;overflow:hidden;">
+  <h3 style="font-size:14px;color:#1a6e3c;margin-bottom:10px;">🏁 Final Graduates — Left the School</h3>
+  <div class="card" style="padding:0;overflow:hidden;margin-bottom:28px;">
     <table class="data-table">
       <thead>
         <tr>
@@ -862,12 +899,8 @@ function renderGraduatedStudents() {
       </thead>
       <tbody>
         ${graduates.length === 0
-          ? `<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted);">No graduated students yet. They'll appear here after you run "Promote Students" from Settings.</td></tr>`
-          : graduates.map(s => {
-              const history = allResults
-                .filter(r => r.studentId === s.id)
-                .sort((a, b) => (b.session || '').localeCompare(a.session || '') || TERMS.indexOf(b.term) - TERMS.indexOf(a.term));
-              return `
+          ? `<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted);">No one has fully left the school yet.</td></tr>`
+          : graduates.map(s => `
               <tr>
                 <td>
                   ${s.passport
@@ -876,24 +909,53 @@ function renderGraduatedStudents() {
                 </td>
                 <td style="font-weight:600;">${s.name}</td>
                 <td><span class="badge">${s.classId}</span></td>
-                <td>
-                  ${history.length === 0
-                    ? `<span style="font-size:12px;color:var(--text-muted);">No results recorded</span>`
-                    : `<div style="display:flex;flex-wrap:wrap;gap:6px;">
-                        ${history.map(r => `
-                          <div style="display:flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:3px 6px;">
-                            <span style="font-size:11px;font-weight:600;color:#1a6e3c;">${r.session} · ${r.term}</span>
-                            <button class="btn btn-ghost btn-sm" style="padding:2px 6px;" title="Preview" onclick="previewGraduatedResult('${s.id}','${r.session}','${r.term}')">👁</button>
-                            <button class="btn btn-ghost btn-sm" style="padding:2px 6px;" title="Print" onclick="printResult('${s.id}','${r.session}','${r.term}')">🖨️</button>
-                          </div>`).join('')}
-                      </div>`}
-                </td>
+                <td>${resultChips(s.id)}</td>
                 <td>
                   <div style="display:flex;gap:6px;flex-wrap:wrap;">
                     <button class="btn btn-secondary btn-sm" onclick="reinstateStudent('${s.id}')">↩️ Reinstate</button>
                     <button class="btn btn-ghost btn-sm" style="color:#dc2626;" onclick="deleteStudent('${s.id}')">Delete</button>
                   </div>
                 </td>
+              </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="font-size:14px;color:#1a6e3c;margin-bottom:10px;">📘 Section Completions — Still Active Students</h3>
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Passport</th>
+          <th>Name</th>
+          <th>Milestone</th>
+          <th>Now In</th>
+          <th>Session</th>
+          <th>Result History</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sectionEvents.length === 0
+          ? `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">No section completions recorded yet — these appear as students move from Primary 4/5 into J.S.S 1, or from J.S.S 3 into S.S 1.</td></tr>`
+          : sectionEvents.map(m => {
+              const s = m.student;
+              return `
+              <tr>
+                <td>
+                  ${s.passport
+                    ? `<img src="${s.passport}" style="width:36px;height:40px;object-fit:cover;border-radius:4px;border:1px solid #55A845;" />`
+                    : `<div style="width:36px;height:40px;background:#e8f5e9;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:16px;">👤</div>`}
+                </td>
+                <td style="font-weight:600;">${s.name}</td>
+                <td>
+                  <div style="font-size:12px;font-weight:600;color:#3730a3;">🎓 ${m.label}</div>
+                  <div style="font-size:11px;color:var(--text-muted);">${m.fromClass} → ${m.toClass}</div>
+                </td>
+                <td>
+                  <span class="badge">${s.classId}</span> ${studentStatusBadge(s.status)}
+                </td>
+                <td style="color:var(--text-muted);font-size:12px;">${m.session}</td>
+                <td>${resultChips(s.id)}</td>
               </tr>`;
             }).join('')}
       </tbody>
@@ -1280,13 +1342,16 @@ function renderSettings() {
     <div class="card" style="grid-column:1/-1;">
       <h3 style="margin-bottom:16px;color:#55A845;font-size:14px;border-bottom:2px solid #e8f5e9;padding-bottom:8px;">🎓 New Session &amp; Promotion</h3>
       <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.6;">
-        When the school year ends and a new session begins, use this to advance every student one class up in one go.
+        When the school year ends and a new session begins, use this to advance every student in one go.
         <ul style="margin:10px 0 0 18px;padding:0;">
           <li>Students marked <strong>Repeat</strong> (see each student's Edit page) stay in their current class and switch back to Active.</li>
+          <li><strong>Primary 4</strong> is a fork the system can't decide for you — those students are skipped here. Afterwards, open each one and set their class to <strong>Primary 5</strong> (continuing) or <strong>J.S.S 1</strong> (moving up, which also records them as having completed Primary School).</li>
+          <li><strong>J.S.S 3</strong> students move up to <strong>S.S 1</strong> automatically and are recorded as having completed Junior Secondary — they remain active students, just now in Senior Secondary.</li>
           <li>Students in the top class (${ALL_CLASSES[ALL_CLASSES.length-1] || '—'}) are marked <strong>Graduated</strong> and keep their class for records.</li>
           <li>Students already <strong>Graduated</strong> are left untouched.</li>
           <li>Everyone else moves up to the next class.</li>
         </ul>
+        <div style="margin-top:10px;">All of the above — Primary and Junior Secondary completions included — show up in the <a href="#" onclick="navigate('graduated');return false;">Graduated tab</a>, alongside students who've fully left the school.</div>
       </div>
       <button class="btn btn-primary" onclick="showPromotionModal()">🎓 Promote Students &amp; Start New Session</button>
     </div>
@@ -1345,10 +1410,11 @@ async function runPromotion() {
       `⬆️ Promoted: ${summary.promoted}\n` +
       `🔁 Repeating (stayed in class): ${summary.repeated}\n` +
       `🎓 Graduated: ${summary.graduated}\n` +
+      (summary.needsDecision > 0 ? `🧭 Needs your decision (Primary 4 → Primary 5 or J.S.S 1): ${summary.needsDecision}\n` : '') +
       `➖ Unchanged: ${summary.skipped}` +
-      (summary.graduated > 0 ? `\n\nGraduated students have moved to the Graduated tab — their results are preserved there.` : '')
+      (summary.graduated > 0 || summary.needsDecision > 0 ? `\n\nCheck the Graduated tab for the full record, and don't forget to place any Primary 4 students still waiting on a decision.` : '')
     );
-    navigate(summary.graduated > 0 ? 'graduated' : 'students');
+    navigate((summary.graduated > 0 || summary.needsDecision > 0) ? 'graduated' : 'students');
   } catch (e) {
     alert('Promotion failed: ' + e.message);
   } finally {

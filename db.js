@@ -31,12 +31,40 @@ const DEFAULT_CLASS_SUBJECTS = {
   "Primary 2":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies"],
   "Primary 3":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies","Basic Digital Literacy","PVS"],
   "Primary 4":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies","Basic Digital Literacy","PVS"],
+  "Primary 5":   ["English Studies","Basic Science and Technology","Writing Skills","Mathematics","Qur'an","Yoruba","Nigeria History","Physical & Health Education","Social and Citizenship Studies","Islamic Studies","Quantitative Reasoning","CCA","Verbal Reasoning","Arabic Studies","Basic Digital Literacy","PVS"],
   "J.S.S 1":     ["Mathematics","English Studies","Business Studies","Nigeria History","CCA","Intermediate Science","Literature in English","Islamic Studies","Arabic Studies","Agricultural Science","Social and Citizenship Studies","Qur'an","Yoruba","Digital Technology"],
   "J.S.S 2":     ["Mathematics","English Studies","Business Studies","Nigeria History","CCA","Intermediate Science","Literature in English","Islamic Studies","Arabic Studies","Agricultural Science","Social and Citizenship Studies","Qur'an","Yoruba","Digital Technology"],
   "J.S.S 3":     ["Mathematics","English Studies","Business Studies","Nigeria History","CCA","Intermediate Science","Literature in English","Islamic Studies","Arabic Studies","Agricultural Science","Social and Citizenship Studies","Qur'an","Yoruba","Digital Technology"],
   "S.S 1":       ["Mathematics","English Language","Physics","Biology","Chemistry","Geography","Citizenship and Heritage Education","Agricultural Science","Qur'an","Arabic Studies","Digital Technology"],
   "S.S 2":       ["Mathematics","English Language","Physics","Biology","Chemistry","Geography","Citizenship and Heritage Education","Agricultural Science","Qur'an","Arabic Studies","Digital Technology"],
   "S.S 3":       ["Mathematics","English Language","Physics","Biology","Chemistry","Geography","Citizenship and Heritage Education","Agricultural Science","Qur'an","Arabic Studies","Digital Technology"],
+};
+
+// ── Promotion / section-crossing rules ──────────────────────────
+// Primary 4 is a deliberate fork: some students continue to Primary 5,
+// others move straight to J.S.S 1. The system can't know which, so it's
+// never auto-promoted — the admin decides per student (just by editing
+// their class), and that edit is what triggers the "Completed Primary
+// School" milestone below if they land in J.S.S 1.
+const BRANCH_CLASS = 'Primary 4';
+
+// Coarse "school section" a class belongs to, used only to detect when a
+// student crosses from one section into the next (Primary → Junior
+// Secondary → Senior Secondary), regardless of the exact class involved.
+function sectionOf(classId) {
+  if (!classId) return 'other';
+  if (classId.startsWith('S.S'))   return 'senior';
+  if (classId.startsWith('J.S.S')) return 'junior';
+  return 'primary';
+}
+
+// Milestone label to log when a student crosses from one section to the
+// next. These students stay 'active' — they keep showing up in normal
+// Students/Results views — but the crossing itself is recorded so the
+// Graduated tab can show "completed Primary/Junior Secondary" history.
+const SECTION_MILESTONE = {
+  'primary->junior': 'Completed Primary School',
+  'junior->senior':  'Completed Junior Secondary School',
 };
 
 // ── Schema ────────────────────────────────────────────────────
@@ -289,6 +317,55 @@ async function initSchema() {
     EXCEPTION WHEN OTHERS THEN NULL;
     END$$;
   `).catch(() => {});
+
+  // Records "section completed" and "left the school" events for students —
+  // e.g. Primary 4→J.S.S 1, J.S.S 3→S.S 1, or final graduation from S.S 3.
+  // A student can appear here multiple times over their years at the school,
+  // and still be an active student even after a non-final milestone.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS student_milestones (
+      id          TEXT PRIMARY KEY,
+      "studentId" TEXT NOT NULL,
+      label       TEXT NOT NULL,
+      "fromClass" TEXT NOT NULL,
+      "toClass"   TEXT DEFAULT '',
+      session     TEXT NOT NULL,
+      final       BOOLEAN NOT NULL DEFAULT FALSE,
+      "createdAt" TIMESTAMPTZ DEFAULT NOW()
+    );
+  `);
+
+  // Auto-migration: introduce the new "Primary 5" class, inserted right after
+  // "Primary 4" in the class order. Runs once — later boots see the class
+  // already present (in any session/term) and skip straight past this.
+  const { rows: p5Rows } = await pool.query(`SELECT 1 FROM class_subjects WHERE "classId" = 'Primary 5' LIMIT 1`);
+  if (p5Rows.length === 0) {
+    const { rows: p4Rows } = await pool.query(
+      `SELECT subjects, position FROM class_subjects WHERE "classId" = 'Primary 4' ORDER BY "updatedAt" DESC LIMIT 1`
+    );
+    if (p4Rows[0]) {
+      const insertPos = p4Rows[0].position + 1;
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        // Make room right after Primary 4 for every class that comes next.
+        await client.query('UPDATE class_subjects SET position = position + 1 WHERE position >= $1', [insertPos]);
+        const { rows: setRows } = await client.query('SELECT session, term FROM settings WHERE id=1');
+        const seedSession = setRows[0]?.session || '2024/2025';
+        const seedTerm    = setRows[0]?.term    || '1ST TERM';
+        await client.query(
+          `INSERT INTO class_subjects ("classId", subjects, position, session, term) VALUES ($1,$2,$3,$4,$5)`,
+          ['Primary 5', p4Rows[0].subjects, insertPos, seedSession, seedTerm]
+        );
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
+    }
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -374,6 +451,49 @@ const Users = {
 };
 
 // ── Students ──────────────────────────────────────────────────
+const Milestones = {
+  create: async (client, { studentId, label, fromClass, toClass, session, final }) => {
+    await client.query(
+      `INSERT INTO student_milestones (id, "studentId", label, "fromClass", "toClass", session, final)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      ['ms_' + uid(), studentId, label, fromClass, toClass || '', session, !!final]
+    );
+  },
+  listAll: async () => {
+    const { rows } = await pool.query('SELECT * FROM student_milestones ORDER BY "createdAt" DESC');
+    return rows.map(r => ({ ...r, final: !!r.final }));
+  },
+  listByStudent: async (studentId) => {
+    const { rows } = await pool.query(
+      'SELECT * FROM student_milestones WHERE "studentId"=$1 ORDER BY "createdAt" DESC', [studentId]
+    );
+    return rows.map(r => ({ ...r, final: !!r.final }));
+  },
+  // When an admin reinstates a mistakenly-graduated student, drop the most
+  // recent "left the school" record so the Graduated tab stays accurate.
+  deleteMostRecentFinal: async (client, studentId) => {
+    await client.query(
+      `DELETE FROM student_milestones WHERE id = (
+         SELECT id FROM student_milestones WHERE "studentId"=$1 AND final=TRUE
+         ORDER BY "createdAt" DESC LIMIT 1
+       )`,
+      [studentId]
+    );
+  },
+};
+
+async function getTopClass(client = pool) {
+  const { rows } = await client.query(
+    'SELECT "classId", MIN(position) AS position FROM class_subjects GROUP BY "classId" ORDER BY position DESC LIMIT 1'
+  );
+  return rows[0]?.classId || null;
+}
+
+async function getCurrentSession(client = pool) {
+  const { rows } = await client.query('SELECT session FROM settings WHERE id=1');
+  return rows[0]?.session || '';
+}
+
 const Students = {
   list: async () => {
     const { rows } = await pool.query('SELECT * FROM students ORDER BY "classId", name');
@@ -384,20 +504,60 @@ const Students = {
     return rows[0] || null;
   },
   save: async (student) => {
+    const id = student.id || 'stu_' + uid();
     const status = ['active','repeat','graduated'].includes(student.status) ? student.status : 'active';
-    await pool.query(`
-      INSERT INTO students (id, name, "classId", "daysAttended", passport, status)
-      VALUES ($1,$2,$3,$4,$5,$6)
-      ON CONFLICT (id) DO UPDATE
-        SET name=$2, "classId"=$3, "daysAttended"=$4, passport=$5, status=$6
-    `, [
-      student.id || 'stu_' + uid(),
-      student.name,
-      student.classId,
-      student.daysAttended || '',
-      student.passport || '',
-      status,
-    ]);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const { rows: existingRows } = await client.query('SELECT "classId", status FROM students WHERE id=$1', [id]);
+      const prev = existingRows[0] || null;
+
+      await client.query(`
+        INSERT INTO students (id, name, "classId", "daysAttended", passport, status)
+        VALUES ($1,$2,$3,$4,$5,$6)
+        ON CONFLICT (id) DO UPDATE
+          SET name=$2, "classId"=$3, "daysAttended"=$4, passport=$5, status=$6
+      `, [id, student.name, student.classId, student.daysAttended || '', student.passport || '', status]);
+
+      if (prev) {
+        const currentSession = await getCurrentSession(client);
+
+        // Section-boundary crossing (e.g. Primary 4 → J.S.S 1), even though
+        // the student stays active and keeps showing up in normal views.
+        if (prev.classId !== student.classId) {
+          const key = sectionOf(prev.classId) + '->' + sectionOf(student.classId);
+          if (SECTION_MILESTONE[key]) {
+            await Milestones.create(client, {
+              studentId: id, label: SECTION_MILESTONE[key],
+              fromClass: prev.classId, toClass: student.classId,
+              session: currentSession, final: false,
+            });
+          }
+        }
+
+        // Status crossing into/out of 'graduated' (final leaving the school).
+        if (prev.status !== 'graduated' && status === 'graduated') {
+          const topClass = await getTopClass(client);
+          await Milestones.create(client, {
+            studentId: id,
+            label: student.classId === topClass ? 'Completed Senior Secondary School' : 'Left the School',
+            fromClass: student.classId, toClass: '',
+            session: currentSession, final: true,
+          });
+        } else if (prev.status === 'graduated' && status !== 'graduated') {
+          await Milestones.deleteMostRecentFinal(client, id);
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   },
   delete: async (id) => {
     await pool.query('DELETE FROM students WHERE id=$1', [id]);
@@ -416,13 +576,19 @@ const Students = {
 
   // ── Promotion (admin-triggered, at the start of a new session) ─────────
   // Rules:
-  //   • status='repeat'   → classId unchanged, status reset to 'active'
-  //                         (they repeat this class as a normal active student).
-  //   • status='graduated'→ left untouched entirely (already left the school).
+  //   • status='repeat'    → classId unchanged, status reset to 'active'
+  //                          (they repeat this class as a normal active student).
+  //   • status='graduated' → left untouched entirely (already left the school).
+  //   • classId=BRANCH_CLASS (Primary 4) → left untouched; the admin must
+  //     decide per student between Primary 5 and J.S.S 1 (edit the student).
+  //     That later edit is what logs their "Completed Primary School" milestone.
   //   • top class (last in class order) + status='active' → status becomes
-  //     'graduated', classId unchanged (kept for historical records).
-  //   • everyone else ('active', not top class) → moved to the next class
-  //     in sequence, status stays 'active'.
+  //     'graduated', classId unchanged (kept for historical records); logs a
+  //     final "Completed Senior Secondary School" milestone.
+  //   • everyone else ('active', not top/branch class) → moved to the next
+  //     class in sequence, status stays 'active'; if that move crosses a
+  //     school-section boundary (e.g. J.S.S 3 → S.S 1) a non-final milestone
+  //     is logged even though they remain a normal active student.
   // Runs as one transaction; returns a summary of what happened.
   promoteAll: async () => {
     const client = await pool.connect();
@@ -439,10 +605,12 @@ const Students = {
       const topClass = classOrder[classOrder.length - 1];
       const nextClass = {};
       classOrder.forEach((c, i) => { if (i < classOrder.length - 1) nextClass[c] = classOrder[i + 1]; });
+      delete nextClass[BRANCH_CLASS]; // never auto-promoted — admin decides
 
+      const currentSession = await getCurrentSession(client);
       const { rows: students } = await client.query('SELECT id, "classId", status FROM students');
 
-      let promoted = 0, repeated = 0, graduated = 0, skipped = 0;
+      let promoted = 0, repeated = 0, graduated = 0, needsDecision = 0, skipped = 0;
       for (const s of students) {
         if (s.status === 'graduated') { skipped++; continue; }
 
@@ -452,20 +620,38 @@ const Students = {
           continue;
         }
 
+        if (s.classId === BRANCH_CLASS) {
+          needsDecision++; // admin must move this student to Primary 5 or J.S.S 1 manually
+          continue;
+        }
+
         if (s.classId === topClass) {
           await client.query('UPDATE students SET status=$1 WHERE id=$2', ['graduated', s.id]);
+          await Milestones.create(client, {
+            studentId: s.id, label: 'Completed Senior Secondary School',
+            fromClass: topClass, toClass: '', session: currentSession, final: true,
+          });
           graduated++;
           continue;
         }
 
         const next = nextClass[s.classId];
         if (!next) { skipped++; continue; } // classId not in the known order — leave alone
+
         await client.query('UPDATE students SET "classId"=$1 WHERE id=$2', [next, s.id]);
+
+        const key = sectionOf(s.classId) + '->' + sectionOf(next);
+        if (SECTION_MILESTONE[key]) {
+          await Milestones.create(client, {
+            studentId: s.id, label: SECTION_MILESTONE[key],
+            fromClass: s.classId, toClass: next, session: currentSession, final: false,
+          });
+        }
         promoted++;
       }
 
       await client.query('COMMIT');
-      return { promoted, repeated, graduated, skipped, total: students.length };
+      return { promoted, repeated, graduated, needsDecision, skipped, total: students.length };
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
@@ -895,5 +1081,5 @@ const ClassSubjects = {
   },
 };
 
-module.exports = { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, ClassSubjects, uid };
+module.exports = { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, ClassSubjects, Milestones, uid };
 

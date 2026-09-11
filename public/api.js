@@ -46,13 +46,22 @@ const DB = {
   _students: null,
   _results:  null,
   _settings: null,
+  _milestones: null,
 
   async init() {
-    [this._students, this._results, this._settings] = await Promise.all([
+    const calls = [
       API.get('/api/students'),
       API.get('/api/results'),
       API.get('/api/settings'),
-    ]);
+    ];
+    const isAdminRole = API.getRole() === 'admin';
+    if (isAdminRole) calls.push(API.get('/api/milestones'));
+
+    const [students, results, settings, milestones] = await Promise.all(calls);
+    this._students   = students;
+    this._results    = results;
+    this._settings    = settings;
+    this._milestones = isAdminRole ? (milestones || []) : [];
     // Hydrate CLASS_SUBJECTS / ALL_CLASSES from the persisted source of truth.
     if (typeof loadClassSubjects === 'function') await loadClassSubjects();
   },
@@ -60,7 +69,8 @@ const DB = {
   invalidate() {
     this._students = null;
     this._results  = null;
-    this._settings = null;
+    this._settings  = null;
+    this._milestones = null;
   },
 
   // ── Students ──────────────────────────────────────────────
@@ -91,8 +101,14 @@ const DB = {
   },
   async promoteAllStudents() {
     const res = await API.post('/api/students/promote');
-    this._students = null; // stale after bulk classId/status changes — force refetch
+    this._students   = null; // stale after bulk classId/status changes — force refetch
+    this._milestones = null; // promotion may have logged new section/graduation milestones
     return res;
+  },
+
+  // ── Milestones (admin only) — section completions & graduations ───
+  getMilestones() {
+    return this._milestones || [];
   },
 
   // ── Results ───────────────────────────────────────────────

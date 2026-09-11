@@ -6,7 +6,7 @@ const express  = require('express');
 const cors     = require('cors');
 const jwt      = require('jsonwebtoken');
 const path     = require('path');
-const { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, ClassSubjects, uid } = require('./db');
+const { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, ClassSubjects, Milestones, uid } = require('./db');
 
 const app    = express();
 const PORT   = process.env.PORT || 3000;
@@ -116,6 +116,16 @@ app.post('/api/students/promote', requireAdmin, async (req, res) => {
     const summary = await Students.promoteAll();
     res.json({ ok: true, ...summary });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// ── STUDENT MILESTONES (admin only) ──────────────────────────
+// Section-completion / graduation history — Primary→Junior Secondary,
+// Junior→Senior Secondary, and final graduation from Senior Secondary.
+app.get('/api/milestones', requireAdmin, async (req, res) => {
+  try {
+    const rows = await Milestones.listAll();
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── RESULTS ───────────────────────────────────────────────────
