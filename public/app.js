@@ -12,6 +12,13 @@ let subjectsSession = ''; // selected session on the admin Subjects page (blank 
 let subjectsTerm = '';    // selected term on the admin Subjects page (blank = use global settings)
 
 function isAdmin() { return API.getRole() === 'admin'; }
+// Graduated students are kept in the database forever (results, passport, etc.)
+// but are excluded from every "current school" view — dashboards, class
+// rosters, the Results page, batch printing. They only show up in the
+// dedicated Graduated tab, where their full history can still be pulled up.
+function activeStudents() {
+  return (DB.getStudents() || []).filter(s => (s.status || 'active') !== 'graduated');
+}
 function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -193,6 +200,7 @@ function renderSidebar() {
     ...(admin ? [{ id:'students',    icon:'👥', label:'Students' }]    : []),
     { id:'results',     icon:'📋', label:'Results' },
     ...(admin ? [{ id:'batch_print', icon:'🖨️', label:'Batch Print' }] : []),
+    ...(admin ? [{ id:'graduated',   icon:'🎓', label:'Graduated' }]   : []),
     ...(admin ? [{ id:'teachers',    icon:'👩‍🏫', label:'Teachers' }]   : []),
     ...(admin ? [{ id:'subjects',    icon:'📚', label:'Subjects' }]    : []),
     ...(admin ? [{ id:'settings',    icon:'⚙️', label:'Settings' }]    : []),
@@ -240,6 +248,7 @@ function renderPage() {
     case 'enter_result':  return renderEnterResult();
     case 'preview_result':return renderPreviewResult();
     case 'batch_print':   return admin ? renderBatchPrint() : renderResults();
+    case 'graduated':     return admin ? renderGraduatedStudents() : renderResults();
     case 'teachers':      return admin ? renderTeachers()   : renderResults();
     case 'subjects':      return admin ? renderSubjects()   : renderResults();
     case 'settings':      return admin ? renderSettings()   : renderResults();
@@ -252,9 +261,10 @@ function renderPage() {
 
 // ── DASHBOARD ────────────────────────────────────────────────
 function renderDashboard() {
-  const students = DB.getStudents();
+  const students = activeStudents();
   const results  = DB.getResults();
   const settings = DB.getSettings();
+  const graduatedCount = DB.getStudents().filter(s => s.status === 'graduated').length;
   const classCounts = {};
   ALL_CLASSES.forEach(c => { classCounts[c] = students.filter(s=>s.classId===c).length; });
   const totalStudents = students.length;
@@ -295,6 +305,13 @@ function renderDashboard() {
         <div class="stat-lbl">Results Complete</div>
       </div>
     </div>
+    <div class="stat-card card card-hover" onclick="navigate('graduated')">
+      <div class="stat-icon" style="background:#eef2ff;">🎓</div>
+      <div class="stat-body">
+        <div class="stat-val">${graduatedCount}</div>
+        <div class="stat-lbl">Graduated</div>
+      </div>
+    </div>
   </div>
 
   <div class="section-title-row">
@@ -333,7 +350,7 @@ function studentStatusBadge(status) {
 
 let studentStatusFilter = '';
 function renderStudents() {
-  const students = DB.getStudents();
+  const students = activeStudents(); // graduated students live in the dedicated Graduated tab
   const filterClass = currentClass || '';
   let filtered = filterClass ? students.filter(s=>s.classId===filterClass) : students;
   if (studentStatusFilter) filtered = filtered.filter(s => (s.status || 'active') === studentStatusFilter);
@@ -343,6 +360,7 @@ function renderStudents() {
   <div class="page-header">
     <h1 class="page-title">Students</h1>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn-ghost" onclick="navigate('graduated')">🎓 View Graduated Students</button>
       ${filterClass
         ? `<button class="btn btn-secondary" onclick="downloadClassList('${filterClass.replace(/'/g,"\\'")}')">📥 Download ${filterClass} List</button>`
         : `<button class="btn btn-secondary" onclick="showDownloadClassModal()">📥 Download Class List</button>`
@@ -365,7 +383,6 @@ function renderStudents() {
         <option value="">All Statuses</option>
         <option value="active" ${studentStatusFilter==='active'?'selected':''}>Active</option>
         <option value="repeat" ${studentStatusFilter==='repeat'?'selected':''}>Repeat</option>
-        <option value="graduated" ${studentStatusFilter==='graduated'?'selected':''}>Graduated</option>
       </select>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
@@ -414,7 +431,7 @@ function renderStudents() {
                   <button class="btn btn-secondary btn-sm" onclick="editStudentId='${s.id}';navigate('edit_student');">Edit</button>
                   ${result
                     ? `<button class="btn btn-secondary btn-sm" onclick="editStudentId='${s.id}';navigate('enter_result');">Edit Result</button>
-                       <button class="btn btn-ghost btn-sm" onclick="previewStudentId='${s.id}';navigate('preview_result');">Preview</button>`
+                       <button class="btn btn-ghost btn-sm" onclick="previewStudentId='${s.id}';previewReturnPage='students';navigate('preview_result');">Preview</button>`
                     : `<button class="btn btn-primary btn-sm" onclick="editStudentId='${s.id}';navigate('enter_result');">Enter Result</button>`
                   }
                   <button class="btn btn-ghost btn-sm" style="color:#dc2626;" onclick="deleteStudent('${s.id}')">Delete</button>
@@ -460,7 +477,7 @@ function downloadSelectedClass() {
 // ── DOWNLOAD CLASS LIST ───────────────────────────────────────
 function downloadClassList(classId) {
   const settings  = DB.getSettings();
-  const students  = DB.getStudents().filter(s => s.classId === classId);
+  const students  = activeStudents().filter(s => s.classId === classId);
 
   if (students.length === 0) {
     alert('No students found in ' + classId);
@@ -807,10 +824,96 @@ async function deleteStudent(id) {
   render();
 }
 
+// ============================================================
+// GRADUATED STUDENTS — kept out of every "current school" view but
+// never deleted. Full result history stays available for printing.
+// ============================================================
+function renderGraduatedStudents() {
+  const graduates = DB.getStudents()
+    .filter(s => s.status === 'graduated')
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const allResults = DB.getResults();
+
+  return `
+  <div class="page-header">
+    <h1 class="page-title">🎓 Graduated Students</h1>
+    <div style="display:flex;gap:8px;">
+      <div style="font-size:13px;color:var(--text-muted);align-self:center;">${graduates.length} graduate${graduates.length!==1?'s':''} on record</div>
+      <button class="btn btn-ghost" onclick="navigate('students')">← Back to Students</button>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;padding:14px 18px;background:#eef2ff;border-left:4px solid #3730a3;">
+    <div style="font-size:13px;color:#312e81;">
+      These students no longer count toward your current student totals or class rosters. Their details and every result they ever had are preserved here and can be viewed or printed at any time. Reinstate a student if they were graduated by mistake.
+    </div>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden;">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Passport</th>
+          <th>Name</th>
+          <th>Last Class</th>
+          <th>Result History</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${graduates.length === 0
+          ? `<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted);">No graduated students yet. They'll appear here after you run "Promote Students" from Settings.</td></tr>`
+          : graduates.map(s => {
+              const history = allResults
+                .filter(r => r.studentId === s.id)
+                .sort((a, b) => (b.session || '').localeCompare(a.session || '') || TERMS.indexOf(b.term) - TERMS.indexOf(a.term));
+              return `
+              <tr>
+                <td>
+                  ${s.passport
+                    ? `<img src="${s.passport}" style="width:36px;height:40px;object-fit:cover;border-radius:4px;border:1px solid #55A845;" />`
+                    : `<div style="width:36px;height:40px;background:#e8f5e9;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:16px;">👤</div>`}
+                </td>
+                <td style="font-weight:600;">${s.name}</td>
+                <td><span class="badge">${s.classId}</span></td>
+                <td>
+                  ${history.length === 0
+                    ? `<span style="font-size:12px;color:var(--text-muted);">No results recorded</span>`
+                    : `<div style="display:flex;flex-wrap:wrap;gap:6px;">
+                        ${history.map(r => `
+                          <div style="display:flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:3px 6px;">
+                            <span style="font-size:11px;font-weight:600;color:#1a6e3c;">${r.session} · ${r.term}</span>
+                            <button class="btn btn-ghost btn-sm" style="padding:2px 6px;" title="Preview" onclick="previewGraduatedResult('${s.id}','${r.session}','${r.term}')">👁</button>
+                            <button class="btn btn-ghost btn-sm" style="padding:2px 6px;" title="Print" onclick="printResult('${s.id}','${r.session}','${r.term}')">🖨️</button>
+                          </div>`).join('')}
+                      </div>`}
+                </td>
+                <td>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button class="btn btn-secondary btn-sm" onclick="reinstateStudent('${s.id}')">↩️ Reinstate</button>
+                    <button class="btn btn-ghost btn-sm" style="color:#dc2626;" onclick="deleteStudent('${s.id}')">Delete</button>
+                  </div>
+                </td>
+              </tr>`;
+            }).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+async function reinstateStudent(id) {
+  const student = DB.getStudent(id);
+  if (!student) return;
+  if (!confirm(`Reinstate ${student.name} as an active student in ${student.classId}?`)) return;
+  await DB.saveStudent({ ...student, status: 'active' });
+  await DB.init();
+  navigate('students');
+}
+
 // ── RESULTS ──────────────────────────────────────────────────
 function renderResults() {
   const settings = DB.getSettings();
-  const students = DB.getStudents();
+  const students = activeStudents(); // graduated students' results stay in the Graduated tab
   const filterClass = currentClass || '';
   const filtered = filterClass ? students.filter(s=>s.classId===filterClass) : students;
 
@@ -872,7 +975,7 @@ function renderResults() {
             <td>
               <div style="display:flex;gap:6px;">
                 <button class="btn btn-${r?'secondary':'primary'} btn-sm" onclick="editStudentId='${s.id}';navigate('enter_result');">${r?'Edit':'Enter'}</button>
-                ${r ? `<button class="btn btn-ghost btn-sm" onclick="previewStudentId='${s.id}';navigate('preview_result');">Preview</button>
+                ${r ? `<button class="btn btn-ghost btn-sm" onclick="previewStudentId='${s.id}';previewReturnPage='results';navigate('preview_result');">Preview</button>
                        ${isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="shareResult('${s.id}')">🔗 Share</button>` : ''}
                        ${isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="printResult('${s.id}')">🖨️ Print</button>` : ''}` : ''}
               </div>
@@ -1008,6 +1111,14 @@ function renderEnterResult() {
 }
 
 // ── PREVIEW RESULT ────────────────────────────────────────────
+let previewReturnPage = 'results';
+function previewGraduatedResult(studentId, session, term) {
+  window._entrySession = session;
+  window._entryTerm = term;
+  previewStudentId = studentId;
+  previewReturnPage = 'graduated';
+  navigate('preview_result');
+}
 function renderPreviewResult() {
   const settings = DB.getSettings();
   const student = DB.getStudent(previewStudentId);
@@ -1031,13 +1142,14 @@ function renderPreviewResult() {
     ? buildCrecheResultHTML(student, result, rank, clsStudents.length)
     : buildResultHTML(student, result, rank, clsStudents.length, false);
 
+  const backPage = previewReturnPage;
   return `
   <div class="page-header">
     <h1 class="page-title">Result Preview — ${student.name}</h1>
     <div style="display:flex;gap:8px;">
-      <button class="btn btn-ghost" onclick="navigate('results')">← Back</button>
+      <button class="btn btn-ghost" onclick="window._entrySession=null;window._entryTerm=null;navigate('${backPage}');">← Back</button>
       ${isAdmin() ? `<button class="btn btn-secondary" onclick="shareResult('${student.id}')">🔗 Share Link</button>` : ''}
-      ${isAdmin() ? `<button class="btn btn-primary" onclick="printResult('${student.id}')">🖨️ Print</button>` : ''}
+      ${isAdmin() ? `<button class="btn btn-primary" onclick="printResult('${student.id}','${result.session}','${result.term}')">🖨️ Print</button>` : ''}
     </div>
   </div>
   <div class="card" style="padding:0;overflow:hidden;">
@@ -1233,9 +1345,10 @@ async function runPromotion() {
       `⬆️ Promoted: ${summary.promoted}\n` +
       `🔁 Repeating (stayed in class): ${summary.repeated}\n` +
       `🎓 Graduated: ${summary.graduated}\n` +
-      `➖ Unchanged: ${summary.skipped}`
+      `➖ Unchanged: ${summary.skipped}` +
+      (summary.graduated > 0 ? `\n\nGraduated students have moved to the Graduated tab — their results are preserved there.` : '')
     );
-    navigate('students');
+    navigate(summary.graduated > 0 ? 'graduated' : 'students');
   } catch (e) {
     alert('Promotion failed: ' + e.message);
   } finally {
@@ -1344,7 +1457,7 @@ async function saveResult(andPreview=false) {
   // Reset entry overrides after save
   window._entrySession = null;
   window._entryTerm    = null;
-  if (andPreview) { previewStudentId = editStudentId; navigate('preview_result'); }
+  if (andPreview) { previewStudentId = editStudentId; previewReturnPage='results'; navigate('preview_result'); }
   else { navigate('results'); }
 }
 
@@ -1358,17 +1471,19 @@ async function reloadEntryResult() {
   navigate('enter_result');
 }
 
-function printResult(studentId) {
+function printResult(studentId, forSession, forTerm) {
   const settings = DB.getSettings();
+  const session  = forSession || settings.session;
+  const term     = forTerm    || settings.term;
   const student  = DB.getStudent(studentId);
-  const result   = DB.getResult(studentId, settings.session, settings.term);
+  const result   = DB.getResult(studentId, session, term);
   if (!student || !result) return;
   const clsStudents = DB.getStudents().filter(s=>s.classId===student.classId);
   // Position only assigned when ALL students in the class have results entered
-  const clsWithResults = clsStudents.filter(s => !!DB.getResult(s.id, settings.session, settings.term));
+  const clsWithResults = clsStudents.filter(s => !!DB.getResult(s.id, session, term));
   const allHaveResults = clsWithResults.length === clsStudents.length && clsStudents.length > 0;
   const ranked = clsWithResults.map(s => {
-    const r = DB.getResult(s.id, settings.session, settings.term);
+    const r = DB.getResult(s.id, session, term);
     return {id:s.id, avg: computeStudentAvg(s, r)};
   }).sort((a,b)=>b.avg-a.avg);
   const rank = allHaveResults ? ranked.findIndex(s=>s.id===studentId)+1 : 0;
@@ -1782,7 +1897,7 @@ async function deleteTeacher(id) {
 // ============================================================
 function batchPrintClass(classId) {
   const settings = DB.getSettings();
-  const students = DB.getStudents().filter(s => s.classId === classId);
+  const students = activeStudents().filter(s => s.classId === classId);
   if (students.length === 0) { alert('No students found in ' + classId); return; }
 
   // Position only assigned when ALL students in the class have results entered
@@ -1824,7 +1939,7 @@ function batchPrintClass(classId) {
 // ============================================================
 function renderBatchPrint() {
   const settings = DB.getSettings();
-  const students = DB.getStudents();
+  const students = activeStudents();
 
   // Count results per class
   const classData = ALL_CLASSES.map(cls => {
@@ -2090,7 +2205,7 @@ function studentStatusBadgePlain(status) {
 
 function printAllClasses() {
   const settings = DB.getSettings();
-  const students  = DB.getStudents();
+  const students  = activeStudents();
   const pages = [];
 
   ALL_CLASSES.forEach(cls => {
@@ -2340,7 +2455,7 @@ async function saveCrecheResult(andPreview=false) {
   window._entrySession = null;
   window._entryTerm    = null;
 
-  if (andPreview) { previewStudentId = editStudentId; navigate('preview_result'); }
+  if (andPreview) { previewStudentId = editStudentId; previewReturnPage='results'; navigate('preview_result'); }
   else { navigate('results'); }
 }
 
