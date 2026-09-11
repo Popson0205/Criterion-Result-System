@@ -89,6 +89,11 @@ const DB = {
     if (this._students) this._students = this._students.filter(s => s.id !== id);
     if (this._results)  this._results  = this._results.filter(r => r.studentId !== id);
   },
+  async promoteAllStudents() {
+    const res = await API.post('/api/students/promote');
+    this._students = null; // stale after bulk classId/status changes — force refetch
+    return res;
+  },
 
   // ── Results ───────────────────────────────────────────────
   getResults() {

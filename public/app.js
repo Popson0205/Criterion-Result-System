@@ -321,10 +321,22 @@ function renderDashboard() {
 }
 
 // ── STUDENTS ─────────────────────────────────────────────────
+const STUDENT_STATUS_BADGE = {
+  active:    { label: 'Active',    style: 'background:#e8f5e9;color:#1a6e3c;' },
+  repeat:    { label: '🔁 Repeat', style: 'background:#fff7ed;color:#c2410c;' },
+  graduated: { label: '🎓 Graduated', style: 'background:#eef2ff;color:#3730a3;' },
+};
+function studentStatusBadge(status) {
+  const b = STUDENT_STATUS_BADGE[status] || STUDENT_STATUS_BADGE.active;
+  return `<span class="badge" style="${b.style}">${b.label}</span>`;
+}
+
+let studentStatusFilter = '';
 function renderStudents() {
   const students = DB.getStudents();
   const filterClass = currentClass || '';
-  const filtered = filterClass ? students.filter(s=>s.classId===filterClass) : students;
+  let filtered = filterClass ? students.filter(s=>s.classId===filterClass) : students;
+  if (studentStatusFilter) filtered = filtered.filter(s => (s.status || 'active') === studentStatusFilter);
   const settings = DB.getSettings();
 
   return `
@@ -348,6 +360,15 @@ function renderStudents() {
       </select>
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
+      <label style="font-size:12px;font-weight:600;color:var(--text-muted);white-space:nowrap;">Status</label>
+      <select class="input" style="width:150px;" onchange="studentStatusFilter=this.value;render();">
+        <option value="">All Statuses</option>
+        <option value="active" ${studentStatusFilter==='active'?'selected':''}>Active</option>
+        <option value="repeat" ${studentStatusFilter==='repeat'?'selected':''}>Repeat</option>
+        <option value="graduated" ${studentStatusFilter==='graduated'?'selected':''}>Graduated</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
       <label style="font-size:12px;font-weight:600;color:var(--text-muted);white-space:nowrap;">Session</label>
       <input type="text" class="input" style="width:110px;" value="${settings.session}"
         onchange="const s=DB.getSettings();s.session=this.value;DB.saveSettings(s);render();" />
@@ -368,12 +389,13 @@ function renderStudents() {
           <th>Passport</th>
           <th>Name</th>
           <th>Class</th>
+          <th>Status</th>
           <th>Session</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody>
-        ${filtered.length === 0 ? `<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text-muted);">No students yet. <a href="#" onclick="navigate('add_student');editStudentId=null;">Add one →</a></td></tr>` :
+        ${filtered.length === 0 ? `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">No students yet. <a href="#" onclick="navigate('add_student');editStudentId=null;">Add one →</a></td></tr>` :
           filtered.map(s => {
             const result = DB.getResult(s.id, settings.session, settings.term);
             return `
@@ -385,6 +407,7 @@ function renderStudents() {
               </td>
               <td style="font-weight:600;">${s.name}</td>
               <td><span class="badge">${s.classId}</span></td>
+              <td>${studentStatusBadge(s.status)}</td>
               <td style="color:var(--text-muted);font-size:12px;">${settings.session}</td>
               <td>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -715,6 +738,15 @@ function renderAddStudent(studentId=null) {
         <input id="s-days" type="number" class="input" value="${student?.daysAttended||''}" placeholder="e.g. 60" />
       </div>
       <div class="form-group" style="grid-column:1/-1;">
+        <label>Promotion Status</label>
+        <select id="s-status" class="input">
+          <option value="active" ${(!student || student.status==='active' || !student.status)?'selected':''}>Active — will be promoted normally at the next session</option>
+          <option value="repeat" ${student?.status==='repeat'?'selected':''}>Repeat — stays in ${student?.classId||'this class'} at the next promotion</option>
+          <option value="graduated" ${student?.status==='graduated'?'selected':''}>Graduated — has left the school</option>
+        </select>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Only affects what happens when the admin promotes all students for a new session. Leave as Active unless this student needs to repeat the class or has already graduated.</div>
+      </div>
+      <div class="form-group" style="grid-column:1/-1;">
         <label>Passport Photo</label>
         <div style="display:flex;align-items:center;gap:16px;">
           <div id="passport-preview" style="width:80px;height:90px;border:2px dashed #55A845;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f0fdf4;">
@@ -750,18 +782,19 @@ function previewPassport(input) {
 }
 
 async function saveStudent(id) {
-  const name  = document.getElementById('s-name')?.value.trim();
-  const cls   = document.getElementById('s-class')?.value;
-  const days  = document.getElementById('s-days')?.value;
+  const name   = document.getElementById('s-name')?.value.trim();
+  const cls    = document.getElementById('s-class')?.value;
+  const days   = document.getElementById('s-days')?.value;
+  const status = document.getElementById('s-status')?.value || 'active';
   if (!name) { alert('Please enter student name.'); return; }
   if (!cls)  { alert('Please select a class.'); return; }
   const students = DB.getStudents();
   const passport = window._passportData || (id ? DB.getStudent(id)?.passport : null);
   if (id) {
     const idx = students.findIndex(s=>s.id===id);
-    if (idx>=0) students[idx] = { ...students[idx], name, classId:cls, daysAttended:days, passport };
+    if (idx>=0) students[idx] = { ...students[idx], name, classId:cls, daysAttended:days, passport, status };
   } else {
-    students.push({ id:uid(), name, classId:cls, daysAttended:days, passport, createdAt:Date.now() });
+    students.push({ id:uid(), name, classId:cls, daysAttended:days, passport, status, createdAt:Date.now() });
   }
   await DB.saveStudent(id ? students.find(s=>s.id===id) : students[students.length-1]);
   window._passportData = null;
@@ -1132,7 +1165,82 @@ function renderSettings() {
       </div>
     </div>
 
+    <div class="card" style="grid-column:1/-1;">
+      <h3 style="margin-bottom:16px;color:#55A845;font-size:14px;border-bottom:2px solid #e8f5e9;padding-bottom:8px;">🎓 New Session &amp; Promotion</h3>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.6;">
+        When the school year ends and a new session begins, use this to advance every student one class up in one go.
+        <ul style="margin:10px 0 0 18px;padding:0;">
+          <li>Students marked <strong>Repeat</strong> (see each student's Edit page) stay in their current class and switch back to Active.</li>
+          <li>Students in the top class (${ALL_CLASSES[ALL_CLASSES.length-1] || '—'}) are marked <strong>Graduated</strong> and keep their class for records.</li>
+          <li>Students already <strong>Graduated</strong> are left untouched.</li>
+          <li>Everyone else moves up to the next class.</li>
+        </ul>
+      </div>
+      <button class="btn btn-primary" onclick="showPromotionModal()">🎓 Promote Students &amp; Start New Session</button>
+    </div>
+
+  </div>
+
+  <!-- Promotion Modal -->
+  <div id="promotion-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+    <div class="card" style="width:440px;padding:28px;">
+      <h3 style="margin-bottom:10px;color:#1a6e3c;">🎓 Start New Session</h3>
+      <p style="font-size:13px;color:#555;margin-bottom:16px;">This will move every student's class forward, apply repeat/graduation rules, and update the current session. This cannot be undone automatically — double check any students needing to repeat are marked before continuing.</p>
+      <div class="form-group" style="margin-bottom:20px;">
+        <label>New Academic Session</label>
+        <input id="promo-session" type="text" class="input" placeholder="e.g. ${nextSessionGuess(s.session)}" value="${nextSessionGuess(s.session)}" />
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-primary" onclick="runPromotion()">✅ Confirm &amp; Promote</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('promotion-modal').style.display='none'">Cancel</button>
+      </div>
+    </div>
   </div>`;
+}
+
+// Best-effort guess of the next session string from something like "2024/2025" → "2025/2026".
+function nextSessionGuess(current) {
+  const m = /^(\d{4})\s*\/\s*(\d{4})$/.exec((current || '').trim());
+  if (m) {
+    const a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+    return `${a + 1}/${b + 1}`;
+  }
+  return current || '';
+}
+
+function showPromotionModal() {
+  document.getElementById('promotion-modal').style.display = 'flex';
+}
+
+async function runPromotion() {
+  const newSession = document.getElementById('promo-session')?.value.trim();
+  if (!newSession) { alert('Please enter the new academic session.'); return; }
+  if (!confirm(`Promote every student and start the "${newSession}" session? This cannot be undone automatically.`)) return;
+
+  const btn = document.querySelector('#promotion-modal .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = 'Promoting…'; }
+  try {
+    const summary = await DB.promoteAllStudents();
+    if (summary.error) throw new Error(summary.error);
+
+    const s = DB.getSettings();
+    await DB.saveSettings({ ...s, session: newSession, term: TERMS[0] });
+    await DB.init(); // refresh students/results/settings caches
+
+    document.getElementById('promotion-modal').style.display = 'none';
+    alert(
+      `New session "${newSession}" started.\n\n` +
+      `⬆️ Promoted: ${summary.promoted}\n` +
+      `🔁 Repeating (stayed in class): ${summary.repeated}\n` +
+      `🎓 Graduated: ${summary.graduated}\n` +
+      `➖ Unchanged: ${summary.skipped}`
+    );
+    navigate('students');
+  } catch (e) {
+    alert('Promotion failed: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Confirm & Promote'; }
+  }
 }
 
 function previewStamp(input) {
@@ -1791,7 +1899,193 @@ function renderBatchPrint() {
     <button class="btn btn-primary" onclick="printAllClasses()">
       🖨️ Print Entire School (${classData.reduce((a,d)=>a+d.withResult,0)} results)
     </button>
+  </div>
+
+  <div style="margin-top:20px;" class="card">
+    <div style="font-weight:600;margin-bottom:12px;color:var(--text-primary);">📑 Result Ledger (Record Keeping)</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+      Generates one compact broadsheet per class — every student, every subject score, total, average and position — for a chosen session and term. Print it or save as PDF to keep as the school's permanent result ledger.
+    </div>
+    <button class="btn btn-secondary" onclick="showLedgerModal()">📑 Download Result Ledger</button>
+  </div>
+
+  <!-- Result Ledger Modal -->
+  <div id="ledger-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;">
+    <div class="card" style="width:420px;padding:28px;">
+      <h3 style="margin-bottom:16px;color:#1a6e3c;">📑 Download Result Ledger</h3>
+      <div class="form-group" style="margin-bottom:14px;">
+        <label>Session</label>
+        <input id="ledger-session" type="text" class="input" value="${settings.session}" />
+      </div>
+      <div class="form-group" style="margin-bottom:20px;">
+        <label>Term</label>
+        <select id="ledger-term" class="input">
+          ${TERMS.map(t=>`<option value="${t}" ${settings.term===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-primary" id="ledger-go-btn" onclick="downloadResultLedger()">📑 Generate</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('ledger-modal').style.display='none'">Cancel</button>
+      </div>
+    </div>
   </div>`;
+}
+
+function showLedgerModal() {
+  document.getElementById('ledger-modal').style.display = 'flex';
+}
+
+// ── RESULT LEDGER (broadsheet, all classes, for one session/term) ──────
+async function downloadResultLedger() {
+  const session = document.getElementById('ledger-session')?.value.trim();
+  const term    = document.getElementById('ledger-term')?.value;
+  if (!session || !term) { alert('Please enter a session and term.'); return; }
+
+  const btn = document.getElementById('ledger-go-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+  try {
+    // Subjects are scoped per (session, term) — load the right list for the
+    // term being archived, then restore whatever the app was showing before.
+    const restoreSession = window._entrySession, restoreTerm = window._entryTerm;
+    await loadClassSubjects(session, term);
+    const html = buildLedgerHTML(session, term);
+    await loadClassSubjects(restoreSession || undefined, restoreTerm || undefined);
+
+    document.getElementById('ledger-modal').style.display = 'none';
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    win.document.title = `Result Ledger — ${session} ${term} — Criterion Amazing College`;
+  } catch (e) {
+    alert('Could not generate the ledger: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📑 Generate'; }
+  }
+}
+
+function buildLedgerHTML(session, term) {
+  const students = DB.getStudents();
+  const logoSrc  = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO) ? SCHOOL_LOGO : null;
+  const logoTag  = logoSrc
+    ? `<img src="${logoSrc}" style="width:60px;height:60px;object-fit:contain;border-radius:50%;border:2px solid #1a6e3c;" />`
+    : `<div style="width:60px;height:60px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:20px;">CC</div>`;
+
+  const sections = ALL_CLASSES.map(cls => {
+    const clsStudents = students.filter(s => s.classId === cls);
+    if (clsStudents.length === 0) return '';
+
+    const creche = isCrecheClass(cls);
+    const subjects = creche
+      ? getCrecheSections(cls).sections.flatMap(sec => sec.skills)
+      : (CLASS_SUBJECTS[cls] || []);
+
+    // Compute each student's row + average, so we can rank the class.
+    const withData = clsStudents.map(s => {
+      const r = DB.getResult(s.id, session, term);
+      const scores = r ? r.scores || {} : {};
+      const { rows, avg, totalScore, count } = creche
+        ? computeCrecheResult(scores, subjects)
+        : computeResult(scores, subjects);
+      return { student: s, hasResult: !!r, rows, avg: parseFloat(avg) || 0, totalScore, count };
+    });
+
+    const withResults  = withData.filter(d => d.hasResult);
+    const allHave       = withResults.length === withData.length && withData.length > 0;
+    const ranked         = [...withResults].sort((a, b) => b.avg - a.avg);
+    const rankOf = {};
+    ranked.forEach((d, i) => { rankOf[d.student.id] = i + 1; });
+
+    const sorted = [...withData].sort((a, b) => a.student.name.localeCompare(b.student.name));
+
+    const rowsHTML = sorted.map((d, i) => {
+      const cells = subjects.map(sub => {
+        const cell = d.rows.find(r => r.sub === sub);
+        return `<td style="text-align:center;padding:4px 3px;">${cell && cell.has ? cell.total : (d.hasResult ? '-' : '')}</td>`;
+      }).join('');
+      const status = studentStatusBadgePlain(d.student.status);
+      return `
+        <tr style="background:${i%2===0?'#fff':'#f7fdf8'};">
+          <td style="padding:4px 6px;text-align:center;">${i+1}</td>
+          <td style="padding:4px 8px;font-weight:600;white-space:nowrap;">${d.student.name}</td>
+          ${cells}
+          <td style="padding:4px 6px;text-align:center;font-weight:700;">${d.hasResult ? d.totalScore : ''}</td>
+          <td style="padding:4px 6px;text-align:center;font-weight:700;">${d.hasResult ? d.avg.toFixed(2) : ''}</td>
+          <td style="padding:4px 6px;text-align:center;">${allHave && d.hasResult ? getOrdinal(rankOf[d.student.id]) : '-'}</td>
+          <td style="padding:4px 6px;text-align:center;font-size:10px;">${status}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+    <div class="ledger-section">
+      <div class="ledger-class-header">
+        <div>
+          <div class="ledger-class-name">${cls}</div>
+          <div class="ledger-class-meta">${session} &nbsp;·&nbsp; ${term} &nbsp;·&nbsp; ${clsStudents.length} student${clsStudents.length!==1?'s':''} &nbsp;·&nbsp; ${withResults.length} result${withResults.length!==1?'s':''} recorded</div>
+        </div>
+      </div>
+      <table class="ledger-table">
+        <thead>
+          <tr>
+            <th style="width:26px;">#</th>
+            <th style="text-align:left;min-width:150px;">Student Name</th>
+            ${subjects.map(sub=>`<th>${escapeHtml(sub)}</th>`).join('')}
+            <th>Total</th>
+            <th>Avg</th>
+            <th>Pos</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHTML}</tbody>
+      </table>
+    </div>`;
+  }).filter(Boolean).join('<div style="page-break-after:always;"></div>');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>Result Ledger — ${session} ${term}</title>
+<style>
+  @page { size: A4 landscape; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color:#111; margin:0; padding:0; }
+  .doc-header { display:flex; align-items:center; gap:16px; border-bottom:3px solid #1a6e3c; padding-bottom:12px; margin-bottom:16px; }
+  .doc-header .school-name { font-size:18px; font-weight:900; color:#1a6e3c; text-transform:uppercase; letter-spacing:0.5px; }
+  .doc-header .doc-sub { font-size:12px; color:#555; margin-top:2px; }
+  .ledger-class-header { display:flex; justify-content:space-between; align-items:baseline; background:linear-gradient(135deg,#1a6e3c,#55A845); color:#fff; padding:8px 14px; border-radius:6px; margin-bottom:8px; }
+  .ledger-class-name { font-size:14px; font-weight:800; }
+  .ledger-class-meta { font-size:11px; opacity:0.9; }
+  .ledger-table { width:100%; border-collapse:collapse; font-size:10.5px; margin-bottom:26px; }
+  .ledger-table th { background:#e8f5e9; color:#1a6e3c; padding:5px 3px; font-size:9.5px; text-transform:uppercase; border:1px solid #d5e8d5; text-align:center; }
+  .ledger-table td { border:1px solid #e5e7eb; }
+  .ledger-section { margin-bottom:10px; }
+  .no-print { }
+  @media print { .no-print { display:none !important; } }
+</style>
+</head>
+<body>
+  <div style="padding:0 4mm;">
+    <div class="no-print" style="margin-bottom:14px;display:flex;gap:10px;">
+      <button onclick="window.print()" style="padding:8px 18px;background:#1a6e3c;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">🖨️ Print / Save as PDF</button>
+      <button onclick="window.close()" style="padding:8px 14px;background:#f3f4f6;color:#555;border:1px solid #ddd;border-radius:6px;font-size:13px;cursor:pointer;">Close</button>
+    </div>
+    <div class="doc-header">
+      ${logoTag}
+      <div>
+        <div class="school-name">Criterion Amazing College — Result Ledger</div>
+        <div class="doc-sub">Osogbo, Osun State &nbsp;·&nbsp; Session: ${session} &nbsp;·&nbsp; Term: ${term} &nbsp;·&nbsp; Generated: ${new Date().toLocaleDateString('en-NG',{day:'2-digit',month:'long',year:'numeric'})}</div>
+      </div>
+    </div>
+    ${sections || '<p style="padding:40px;text-align:center;color:#888;">No students found.</p>'}
+  </div>
+</body>
+</html>`;
+}
+
+function studentStatusBadgePlain(status) {
+  if (status === 'repeat') return 'Repeat';
+  if (status === 'graduated') return 'Graduated';
+  return 'Active';
 }
 
 function printAllClasses() {

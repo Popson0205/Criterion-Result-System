@@ -106,6 +106,18 @@ app.delete('/api/students/:id', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── PROMOTION (admin only) ───────────────────────────────────
+// Advances every student one class up for the new session, except:
+//   - students marked 'repeat' stay in their class (and go back to 'active')
+//   - students already 'graduated' are left untouched
+//   - students in the top class (e.g. S.S 3) become 'graduated'
+app.post('/api/students/promote', requireAdmin, async (req, res) => {
+  try {
+    const summary = await Students.promoteAll();
+    res.json({ ok: true, ...summary });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
 // ── RESULTS ───────────────────────────────────────────────────
 app.get('/api/results', requireAuth, async (req, res) => {
   try { res.json(await Results.list()); }

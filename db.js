@@ -57,6 +57,7 @@ async function initSchema() {
       "classId"    TEXT NOT NULL,
       "daysAttended" TEXT DEFAULT '',
       passport     TEXT DEFAULT '',
+      status       TEXT NOT NULL DEFAULT 'active',
       "createdAt"  TIMESTAMPTZ DEFAULT NOW()
     );
 
@@ -254,6 +255,24 @@ async function initSchema() {
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS "bursarSignature" TEXT DEFAULT '';
   `);
 
+  // Auto-migration: add student promotion status (active / repeat / graduated).
+  // Existing rows default to 'active' so nobody is silently marked otherwise.
+  await pool.query(`
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+  `);
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'students_status_check'
+      ) THEN
+        ALTER TABLE students ADD CONSTRAINT students_status_check
+          CHECK (status IN ('active','repeat','graduated'));
+      END IF;
+    EXCEPTION WHEN OTHERS THEN NULL;
+    END$$;
+  `).catch(() => {});
+
   // Auto-migration: update role CHECK for existing deployments
   await pool.query(`
     DO $$
@@ -365,17 +384,19 @@ const Students = {
     return rows[0] || null;
   },
   save: async (student) => {
+    const status = ['active','repeat','graduated'].includes(student.status) ? student.status : 'active';
     await pool.query(`
-      INSERT INTO students (id, name, "classId", "daysAttended", passport)
-      VALUES ($1,$2,$3,$4,$5)
+      INSERT INTO students (id, name, "classId", "daysAttended", passport, status)
+      VALUES ($1,$2,$3,$4,$5,$6)
       ON CONFLICT (id) DO UPDATE
-        SET name=$2, "classId"=$3, "daysAttended"=$4, passport=$5
+        SET name=$2, "classId"=$3, "daysAttended"=$4, passport=$5, status=$6
     `, [
       student.id || 'stu_' + uid(),
       student.name,
       student.classId,
       student.daysAttended || '',
       student.passport || '',
+      status,
     ]);
   },
   delete: async (id) => {
@@ -383,12 +404,73 @@ const Students = {
   },
   bulkInsert: async (students) => {
     for (const s of students) {
+      const status = ['active','repeat','graduated'].includes(s.status) ? s.status : 'active';
       await pool.query(`
-        INSERT INTO students (id, name, "classId", "daysAttended", passport)
-        VALUES ($1,$2,$3,$4,$5)
+        INSERT INTO students (id, name, "classId", "daysAttended", passport, status)
+        VALUES ($1,$2,$3,$4,$5,$6)
         ON CONFLICT (id) DO UPDATE
-          SET name=$2, "classId"=$3, "daysAttended"=$4, passport=$5
-      `, [s.id || 'stu_' + uid(), s.name, s.classId, s.daysAttended || '', s.passport || '']);
+          SET name=$2, "classId"=$3, "daysAttended"=$4, passport=$5, status=$6
+      `, [s.id || 'stu_' + uid(), s.name, s.classId, s.daysAttended || '', s.passport || '', status]);
+    }
+  },
+
+  // ── Promotion (admin-triggered, at the start of a new session) ─────────
+  // Rules:
+  //   • status='repeat'   → classId unchanged, status reset to 'active'
+  //                         (they repeat this class as a normal active student).
+  //   • status='graduated'→ left untouched entirely (already left the school).
+  //   • top class (last in class order) + status='active' → status becomes
+  //     'graduated', classId unchanged (kept for historical records).
+  //   • everyone else ('active', not top class) → moved to the next class
+  //     in sequence, status stays 'active'.
+  // Runs as one transaction; returns a summary of what happened.
+  promoteAll: async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Same ordering logic as ClassSubjects.getAll: earliest "position" a
+      // classId was ever seeded/edited at, across all sessions/terms.
+      const { rows: orderRows } = await client.query(
+        'SELECT "classId", MIN(position) AS position FROM class_subjects GROUP BY "classId" ORDER BY position, "classId"'
+      );
+      const classOrder = orderRows.map(r => r.classId);
+      if (classOrder.length === 0) throw httpError(400, 'No classes are configured yet.');
+      const topClass = classOrder[classOrder.length - 1];
+      const nextClass = {};
+      classOrder.forEach((c, i) => { if (i < classOrder.length - 1) nextClass[c] = classOrder[i + 1]; });
+
+      const { rows: students } = await client.query('SELECT id, "classId", status FROM students');
+
+      let promoted = 0, repeated = 0, graduated = 0, skipped = 0;
+      for (const s of students) {
+        if (s.status === 'graduated') { skipped++; continue; }
+
+        if (s.status === 'repeat') {
+          await client.query('UPDATE students SET status=$1 WHERE id=$2', ['active', s.id]);
+          repeated++;
+          continue;
+        }
+
+        if (s.classId === topClass) {
+          await client.query('UPDATE students SET status=$1 WHERE id=$2', ['graduated', s.id]);
+          graduated++;
+          continue;
+        }
+
+        const next = nextClass[s.classId];
+        if (!next) { skipped++; continue; } // classId not in the known order — leave alone
+        await client.query('UPDATE students SET "classId"=$1 WHERE id=$2', [next, s.id]);
+        promoted++;
+      }
+
+      await client.query('COMMIT');
+      return { promoted, repeated, graduated, skipped, total: students.length };
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
     }
   },
 };
