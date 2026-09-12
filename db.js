@@ -662,12 +662,50 @@ const Students = {
   //     school-section boundary (e.g. J.S.S 3 → S.S 1) a non-final milestone
   //     is logged even though they remain a normal active student.
   // Runs as one transaction; returns a summary of what happened.
-  promoteAll: async () => {
+  //
+  // newSession is the session the school is moving INTO (e.g. "2026/2027").
+  // It's required, and the whole promote-and-advance-the-session operation
+  // now happens atomically in here (this used to be two separate steps —
+  // promote, then a follow-up Settings.save from the client — which is what
+  // let a double-click/double-submit promote the same roster twice in a
+  // row: the second call would see the *new* session as "current" and, since
+  // nothing had snapshotted it yet, sail straight past the historical-session
+  // guard below and promote it again).
+  //
+  // Two guards now stop that:
+  //   1. `SELECT ... FOR UPDATE` on the settings row locks it for the whole
+  //      transaction, so a second promote call that lands while this one is
+  //      still running simply waits — it can no longer read a stale,
+  //      pre-commit view of the current session and slip through.
+  //   2. Once that lock is held, if newSession is the same session already
+  //      sitting in Settings, we refuse outright: you can only promote *out
+  //      of* a given session once. To promote again you must supply a
+  //      genuinely different newSession (which, practically, only makes
+  //      sense once a real new session has begun).
+  promoteAll: async (newSession) => {
+    newSession = (newSession || '').trim();
+    if (!newSession) throw httpError(400, 'Please provide the new session to promote into.');
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
-      const currentSession = await getCurrentSession(client);
+      // Locks the settings row for the duration of this transaction so a
+      // concurrent/second promote call blocks here until we commit, instead
+      // of both reading the same "not yet historical" session and racing.
+      const { rows: settingsRows } = await client.query(
+        'SELECT session FROM settings WHERE id=1 FOR UPDATE'
+      );
+      const currentSession = settingsRows[0]?.session || '';
+
+      if (newSession === currentSession) {
+        throw httpError(409,
+          `Students have already been promoted into the "${currentSession}" session. ` +
+          `To promote again, enter a different (new) session — you can only promote into ` +
+          `the same session once.`
+        );
+      }
+
       if (await sessionIsHistorical(currentSession, client)) {
         throw httpError(409,
           `The "${currentSession}" session has already been closed out by a previous promotion. ` +
@@ -741,8 +779,17 @@ const Students = {
         promoted++;
       }
 
+      // Advance Settings to the new session in the same transaction as the
+      // promotion itself, so the two can never end up out of sync (and so
+      // the settings row stays locked, via the FOR UPDATE above, right up
+      // until the session has actually changed).
+      await client.query(
+        `UPDATE settings SET session=$1, term='1ST TERM' WHERE id=1`,
+        [newSession]
+      );
+
       await client.query('COMMIT');
-      return { promoted, repeated, graduated, needsDecision, skipped, total: students.length };
+      return { promoted, repeated, graduated, needsDecision, skipped, total: students.length, newSession };
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;

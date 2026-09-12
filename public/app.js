@@ -1572,19 +1572,27 @@ function showPromotionModal() {
   document.getElementById('promotion-modal').style.display = 'flex';
 }
 
+let _promotionInFlight = false; // belt-and-suspenders guard against double-submit
+
 async function runPromotion() {
+  if (_promotionInFlight) return; // a promote request is already running — ignore extra clicks
+
   const newSession = document.getElementById('promo-session')?.value.trim();
   if (!newSession) { alert('Please enter the new academic session.'); return; }
   if (!confirm(`Promote every student and start the "${newSession}" session? This cannot be undone automatically.`)) return;
 
+  _promotionInFlight = true;
   const btn = document.querySelector('#promotion-modal .btn-primary');
   if (btn) { btn.disabled = true; btn.textContent = 'Promoting…'; }
   try {
-    const summary = await DB.promoteAllStudents();
+    // The server now promotes AND advances Settings to newSession in one
+    // atomic transaction — it also refuses if newSession is the session
+    // already sitting in Settings, so re-submitting (double-click, or
+    // re-opening this modal and confirming again with the same session)
+    // can't silently promote the same roster twice.
+    const summary = await DB.promoteAllStudents(newSession);
     if (summary.error) throw new Error(summary.error);
 
-    const s = DB.getSettings();
-    await DB.saveSettings({ ...s, session: newSession, term: TERMS[0] });
     await DB.init(); // refresh students/results/settings caches
 
     document.getElementById('promotion-modal').style.display = 'none';
@@ -1601,6 +1609,7 @@ async function runPromotion() {
   } catch (e) {
     alert('Promotion failed: ' + e.message);
   } finally {
+    _promotionInFlight = false;
     if (btn) { btn.disabled = false; btn.textContent = '✅ Confirm & Promote'; }
   }
 }

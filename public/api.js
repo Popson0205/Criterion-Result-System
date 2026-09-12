@@ -103,10 +103,11 @@ const DB = {
     if (this._students) this._students = this._students.filter(s => s.id !== id);
     if (this._results)  this._results  = this._results.filter(r => r.studentId !== id);
   },
-  async promoteAllStudents() {
-    const res = await API.post('/api/students/promote');
+  async promoteAllStudents(newSession) {
+    const res = await API.post('/api/students/promote', { newSession });
     this._students   = null; // stale after bulk classId/status changes — force refetch
     this._milestones = null; // promotion may have logged new section/graduation milestones
+    this._settings   = null; // promotion now advances the session server-side too
     return res;
   },
 

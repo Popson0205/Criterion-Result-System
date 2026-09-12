@@ -132,7 +132,7 @@ app.delete('/api/students/:id', requireAdmin, async (req, res) => {
 //   - students in the top class (e.g. S.S 3) become 'graduated'
 app.post('/api/students/promote', requireAdmin, async (req, res) => {
   try {
-    const summary = await Students.promoteAll();
+    const summary = await Students.promoteAll((req.body?.newSession || '').trim());
     res.json({ ok: true, ...summary });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
