@@ -30,7 +30,11 @@ const API = {
       window.location.href = '/';
       return;
     }
-    return res.json();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || ('Request failed (' + res.status + ')'));
+    }
+    return data;
   },
 
   get(path)         { return this.request('GET', path); },
@@ -106,6 +110,21 @@ const DB = {
     return res;
   },
 
+  // Always the true current roster, ignoring whatever session Settings is
+  // displaying — used by the Primary 5 / J.S.S 1 correction screen.
+  async getLiveStudents() {
+    return API.get('/api/students/live');
+  },
+  // Moves a student's live class regardless of the session being viewed —
+  // the one write operation that's allowed even while browsing an archived
+  // session, since it's explicitly correcting the current live roster.
+  async moveStudentClassLive(id, classId) {
+    const res = await API.post(`/api/students/${id}/move-class-live`, { classId });
+    this._students   = null; // may now be live-vs-historical inconsistent — force refetch
+    this._milestones = null;
+    return res;
+  },
+
   // ── Milestones (admin only) — section completions & graduations ───
   getMilestones() {
     return this._milestones || [];
@@ -143,7 +162,11 @@ const DB = {
   },
   async saveSettings(s) {
     await API.post('/api/settings', s);
-    this._settings = s;
+    // Preserve the server-computed isHistoricalSession flag unless a caller
+    // does a full DB.init() refresh afterward (all session/term-changing
+    // flows do) — keeps callers that only touch e.g. the stamp image from
+    // accidentally clearing the read-only banner state.
+    this._settings = { ...s, isHistoricalSession: this._settings?.isHistoricalSession };
   },
 
   // ── Share tokens ──────────────────────────────────────────

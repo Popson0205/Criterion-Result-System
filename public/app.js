@@ -41,6 +41,14 @@ function navigate(page, params={}) {
   // reflects the right list.
   const leavingSubjectsContext = currentPage === 'subjects' && page !== 'subjects' && page !== 'enter_result';
 
+  // Student records are read-only while browsing an archived session — bounce
+  // straight back to the read-only list rather than opening a form that would
+  // fail (or silently mislead) on save.
+  if ((page === 'add_student' || page === 'edit_student') && DB.getSettings().isHistoricalSession) {
+    alert(`You're viewing the archived "${DB.getSettings().session}" session, so students can't be added or edited here. Switch Settings back to the current session first.`);
+    page = 'students';
+  }
+
   currentPage = page;
   if (params.classId !== undefined) currentClass = params.classId;
   if (params.studentId !== undefined) editStudentId = params.studentId;
@@ -56,6 +64,10 @@ function navigate(page, params={}) {
       DB._milestones = rows || [];
       if (currentPage === 'graduated') render();
     });
+  }
+
+  if (page === 'move_to_p5') {
+    refreshP5Candidates();
   }
 
   if (leavingSubjectsContext) {
@@ -259,6 +271,7 @@ function renderPage() {
     case 'preview_result':return renderPreviewResult();
     case 'batch_print':   return admin ? renderBatchPrint() : renderResults();
     case 'graduated':     return admin ? renderGraduatedStudents() : renderResults();
+    case 'move_to_p5':    return admin ? renderMoveToPrimary5() : renderResults();
     case 'teachers':      return admin ? renderTeachers()   : renderResults();
     case 'subjects':      return admin ? renderSubjects()   : renderResults();
     case 'settings':      return admin ? renderSettings()   : renderResults();
@@ -283,8 +296,15 @@ function renderDashboard() {
   return `
   <div class="page-header">
     <h1 class="page-title">Dashboard</h1>
-    <div class="page-meta">${settings.session} &nbsp;·&nbsp; ${settings.term}</div>
+    <div class="page-meta">${settings.session} &nbsp;·&nbsp; ${settings.term}${settings.isHistoricalSession ? ' &nbsp;·&nbsp; 📅 Archived (read-only)' : ''}</div>
   </div>
+
+  ${settings.isHistoricalSession ? `
+  <div class="card" style="margin-bottom:16px;padding:14px 18px;background:#fff7ed;border-left:4px solid #c2410c;">
+    <div style="font-size:13px;color:#7c2d12;">
+      📅 You're viewing the archived <strong>${settings.session}</strong> session — every figure below reflects the school exactly as it stood back then.
+    </div>
+  </div>` : ''}
 
   <div class="stats-row">
     <div class="stat-card card">
@@ -365,19 +385,28 @@ function renderStudents() {
   let filtered = filterClass ? students.filter(s=>s.classId===filterClass) : students;
   if (studentStatusFilter) filtered = filtered.filter(s => (s.status || 'active') === studentStatusFilter);
   const settings = DB.getSettings();
+  const readOnly = !!settings.isHistoricalSession;
 
   return `
   <div class="page-header">
     <h1 class="page-title">Students</h1>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <button class="btn btn-ghost" onclick="navigate('graduated')">🎓 View Graduated Students</button>
+      <button class="btn btn-ghost" onclick="navigate('move_to_p5')">🔧 Move J.S.S 1 → Primary 5</button>
       ${filterClass
         ? `<button class="btn btn-secondary" onclick="downloadClassList('${filterClass.replace(/'/g,"\\'")}')">📥 Download ${filterClass} List</button>`
         : `<button class="btn btn-secondary" onclick="showDownloadClassModal()">📥 Download Class List</button>`
       }
-      <button class="btn btn-primary" onclick="navigate('add_student');editStudentId=null;">+ Add Student</button>
+      <button class="btn btn-primary" ${readOnly?'disabled title="Read-only while viewing an archived session"':''} onclick="navigate('add_student');editStudentId=null;">+ Add Student</button>
     </div>
   </div>
+
+  ${readOnly ? `
+  <div class="card" style="margin-bottom:16px;padding:14px 18px;background:#fff7ed;border-left:4px solid #c2410c;">
+    <div style="font-size:13px;color:#7c2d12;">
+      📅 You're viewing the archived <strong>${settings.session}</strong> session — students are shown in the class they were actually in back then, and this list is <strong>read-only</strong>. Switch Settings back to the current session to add, edit, or promote students.
+    </div>
+  </div>` : ''}
 
   <div class="filter-bar card" style="margin-bottom:16px;gap:16px;flex-wrap:wrap;">
     <div style="display:flex;align-items:center;gap:8px;">
@@ -398,12 +427,12 @@ function renderStudents() {
     <div style="display:flex;align-items:center;gap:8px;">
       <label style="font-size:12px;font-weight:600;color:var(--text-muted);white-space:nowrap;">Session</label>
       <input type="text" class="input" style="width:110px;" value="${settings.session}"
-        onchange="const s=DB.getSettings();s.session=this.value;DB.saveSettings(s);render();" />
+        onchange="quickChangeSession(this.value)" />
     </div>
     <div style="display:flex;align-items:center;gap:8px;">
       <label style="font-size:12px;font-weight:600;color:var(--text-muted);">Term</label>
       <select class="input" style="width:130px;"
-        onchange="const s=DB.getSettings();s.term=this.value;DB.saveSettings(s);render();">
+        onchange="quickChangeTerm(this.value)">
         ${TERMS.map(t=>`<option value="${t}" ${settings.term===t?'selected':''}>${t}</option>`).join('')}
       </select>
     </div>
@@ -438,13 +467,19 @@ function renderStudents() {
               <td style="color:var(--text-muted);font-size:12px;">${settings.session}</td>
               <td>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                  <button class="btn btn-secondary btn-sm" onclick="editStudentId='${s.id}';navigate('edit_student');">Edit</button>
+                  ${readOnly
+                    ? `<button class="btn btn-secondary btn-sm" disabled title="Read-only while viewing an archived session">Edit</button>`
+                    : `<button class="btn btn-secondary btn-sm" onclick="editStudentId='${s.id}';navigate('edit_student');">Edit</button>`
+                  }
                   ${result
                     ? `<button class="btn btn-secondary btn-sm" onclick="editStudentId='${s.id}';navigate('enter_result');">Edit Result</button>
                        <button class="btn btn-ghost btn-sm" onclick="previewStudentId='${s.id}';previewReturnPage='students';navigate('preview_result');">Preview</button>`
                     : `<button class="btn btn-primary btn-sm" onclick="editStudentId='${s.id}';navigate('enter_result');">Enter Result</button>`
                   }
-                  <button class="btn btn-ghost btn-sm" style="color:#dc2626;" onclick="deleteStudent('${s.id}')">Delete</button>
+                  ${readOnly
+                    ? ''
+                    : `<button class="btn btn-ghost btn-sm" style="color:#dc2626;" onclick="deleteStudent('${s.id}')">Delete</button>`
+                  }
                 </div>
               </td>
             </tr>`;
@@ -815,23 +850,30 @@ async function saveStudent(id) {
   const status = document.getElementById('s-status')?.value || 'active';
   if (!name) { alert('Please enter student name.'); return; }
   if (!cls)  { alert('Please select a class.'); return; }
-  const students = DB.getStudents();
-  const passport = window._passportData || (id ? DB.getStudent(id)?.passport : null);
-  if (id) {
-    const idx = students.findIndex(s=>s.id===id);
-    if (idx>=0) students[idx] = { ...students[idx], name, classId:cls, daysAttended:days, passport, status };
-  } else {
-    students.push({ id:uid(), name, classId:cls, daysAttended:days, passport, status, createdAt:Date.now() });
+  const existing = id ? DB.getStudent(id) : null;
+  const passport = window._passportData || existing?.passport || null;
+  const student = {
+    id: id || uid(),
+    name, classId: cls, daysAttended: days, passport, status,
+    createdAt: existing?.createdAt || Date.now(),
+  };
+  try {
+    await DB.saveStudent(student); // cache is only updated after a successful save
+    window._passportData = null;
+    navigate('students');
+  } catch (e) {
+    alert(e.message || 'Could not save this student.');
   }
-  await DB.saveStudent(id ? students.find(s=>s.id===id) : students[students.length-1]);
-  window._passportData = null;
-  navigate('students');
 }
 
 async function deleteStudent(id) {
   if (!confirm('Delete this student and all their results?')) return;
-  await DB.deleteStudent(id);
-  render();
+  try {
+    await DB.deleteStudent(id);
+    render();
+  } catch (e) {
+    alert(e.message || 'Could not delete this student.');
+  }
 }
 
 // ============================================================
@@ -967,9 +1009,119 @@ async function reinstateStudent(id) {
   const student = DB.getStudent(id);
   if (!student) return;
   if (!confirm(`Reinstate ${student.name} as an active student in ${student.classId}?`)) return;
-  await DB.saveStudent({ ...student, status: 'active' });
-  await DB.init();
-  navigate('students');
+  try {
+    await DB.saveStudent({ ...student, status: 'active' });
+    await DB.init();
+    navigate('students');
+  } catch (e) {
+    alert(e.message || 'Could not reinstate this student.');
+  }
+}
+
+// ============================================================
+// MOVE J.S.S 1 → PRIMARY 5 — a correction tool, always acting on the
+// live roster regardless of what session Settings is currently showing.
+// Exists because Primary 5 didn't exist yet the first time promotion ran,
+// so every real Primary 4 student was pushed straight into J.S.S 1.
+// ============================================================
+let liveP5Candidates = null; // null = loading; [] = loaded, empty
+let p5Selected = new Set();
+
+async function refreshP5Candidates() {
+  liveP5Candidates = null;
+  if (currentPage === 'move_to_p5') render();
+  try {
+    const rows = await DB.getLiveStudents();
+    liveP5Candidates = rows.filter(s => s.classId === 'J.S.S 1' && s.status !== 'graduated');
+  } catch (e) {
+    liveP5Candidates = [];
+  }
+  p5Selected = new Set();
+  if (currentPage === 'move_to_p5') render();
+}
+
+function renderMoveToPrimary5() {
+  return `
+  <div class="page-header">
+    <h1 class="page-title">🔧 Move Students: J.S.S 1 → Primary 5</h1>
+    <button class="btn btn-ghost" onclick="navigate('students')">← Back to Students</button>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;padding:14px 18px;background:#eef2ff;border-left:4px solid #3730a3;">
+    <div style="font-size:13px;color:#312e81;">
+      This always acts on your <strong>live, current</strong> roster, no matter what session Settings is showing — built for correcting Primary 4 students who were promoted straight into J.S.S 1 before Primary 5 existed. Select who should actually be in Primary 5 and move them in one go. This does <em>not</em> log a "Completed Primary School" milestone, since they never really left Primary in the first place.
+    </div>
+  </div>
+
+  ${liveP5Candidates === null
+    ? `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted);">Loading current J.S.S 1 roster…</div>`
+    : liveP5Candidates.length === 0
+      ? `<div class="card" style="padding:40px;text-align:center;color:var(--text-muted);">No students are currently in J.S.S 1.</div>`
+      : `
+      <div class="card" style="padding:0;overflow:hidden;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width:36px;"><input type="checkbox" onchange="toggleAllP5(this.checked)" ${p5Selected.size===liveP5Candidates.length?'checked':''} /></th>
+              <th>Passport</th>
+              <th>Name</th>
+              <th>Class</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${liveP5Candidates.map(s => `
+              <tr>
+                <td><input type="checkbox" value="${s.id}" ${p5Selected.has(s.id)?'checked':''} onchange="toggleP5(this.checked,'${s.id}')" /></td>
+                <td>
+                  ${s.passport
+                    ? `<img src="${s.passport}" style="width:36px;height:40px;object-fit:cover;border-radius:4px;border:1px solid #55A845;" />`
+                    : `<div style="width:36px;height:40px;background:#e8f5e9;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:16px;">👤</div>`}
+                </td>
+                <td style="font-weight:600;">${s.name}</td>
+                <td><span class="badge">${s.classId}</span></td>
+                <td><button class="btn btn-secondary btn-sm" onclick="moveOneToPrimary5('${s.id}')">↩️ Move to Primary 5</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:16px;">
+        <button class="btn btn-primary" onclick="moveSelectedToPrimary5()" ${p5Selected.size===0?'disabled':''}>↩️ Move Selected to Primary 5 (${p5Selected.size})</button>
+      </div>`
+  }`;
+}
+
+function toggleP5(checked, id) {
+  if (checked) p5Selected.add(id); else p5Selected.delete(id);
+  render();
+}
+function toggleAllP5(checked) {
+  p5Selected = new Set(checked && liveP5Candidates ? liveP5Candidates.map(s=>s.id) : []);
+  render();
+}
+
+async function moveOneToPrimary5(id) {
+  const student = (liveP5Candidates || []).find(s=>s.id===id);
+  if (!student) return;
+  if (!confirm(`Move ${student.name} from J.S.S 1 to Primary 5?`)) return;
+  try {
+    await DB.moveStudentClassLive(id, 'Primary 5');
+    await refreshP5Candidates();
+  } catch (e) {
+    alert(e.message || 'Could not move this student.');
+  }
+}
+
+async function moveSelectedToPrimary5() {
+  if (p5Selected.size === 0) return;
+  if (!confirm(`Move ${p5Selected.size} student(s) from J.S.S 1 to Primary 5?`)) return;
+  let ok = 0, failed = 0;
+  for (const id of [...p5Selected]) {
+    try { await DB.moveStudentClassLive(id, 'Primary 5'); ok++; }
+    catch (e) { failed++; }
+  }
+  await refreshP5Candidates();
+  alert(`Moved ${ok} student(s) to Primary 5.` + (failed > 0 ? ` ${failed} failed.` : ''));
 }
 
 // ── RESULTS ──────────────────────────────────────────────────
@@ -1249,6 +1401,14 @@ function renderSettings() {
   <div class="page-header">
     <h1 class="page-title">Settings</h1>
   </div>
+
+  ${s.isHistoricalSession ? `
+  <div class="card" style="margin-bottom:20px;max-width:900px;padding:14px 18px;background:#fff7ed;border-left:4px solid #c2410c;">
+    <div style="font-size:13px;color:#7c2d12;">
+      📅 <strong>Academic Session "${s.session}" is archived</strong> — this is exactly the class and status every student actually had during that session. Students, Results, Dashboard and printing all show this historical view, and student records are read-only while you're here. Type the live/current session below and hit Save to go back to normal work.
+    </div>
+  </div>` : ''}
+
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:900px;">
 
     <div class="card">
@@ -1257,6 +1417,7 @@ function renderSettings() {
         <div class="form-group">
           <label>Academic Session</label>
           <input id="set-session" type="text" class="input" value="${s.session}" />
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Typing a session that's already been closed by a promotion switches the whole app to a read-only view of that session.</div>
         </div>
         <div class="form-group">
           <label>Current Term</label>
@@ -1353,7 +1514,29 @@ function renderSettings() {
         </ul>
         <div style="margin-top:10px;">All of the above — Primary and Junior Secondary completions included — show up in the <a href="#" onclick="navigate('graduated');return false;">Graduated tab</a>, alongside students who've fully left the school.</div>
       </div>
-      <button class="btn btn-primary" onclick="showPromotionModal()">🎓 Promote Students &amp; Start New Session</button>
+      ${s.isHistoricalSession
+        ? `<button class="btn btn-primary" disabled title="Switch back to the live session first">🎓 Promote Students & Start New Session</button>
+           <div style="font-size:11px;color:#c2410c;margin-top:6px;">Disabled while viewing an archived session — switch Settings back to the current session first.</div>`
+        : `<button class="btn btn-primary" onclick="showPromotionModal()">🎓 Promote Students &amp; Start New Session</button>`
+      }
+    </div>
+
+    <div class="card" style="grid-column:1/-1;">
+      <h3 style="margin-bottom:16px;color:#55A845;font-size:14px;border-bottom:2px solid #e8f5e9;padding-bottom:8px;">🕰️ Reconstruct a Past Session (One-Time)</h3>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;line-height:1.6;">
+        Only needed once: if you already promoted students to a new session <em>before</em> this history feature existed, the session you promoted <em>from</em> has no archived record yet — typing it into Academic Session above would just show today's live data, not what you actually had back then.
+        <br/><br/>
+        This works it out from your current roster instead, by reversing exactly one promotion step: every graduated student is put back in ${ALL_CLASSES[ALL_CLASSES.length-1] || 'the top class'}, and everyone else goes back to whatever class came right before their current one (using the class list as it stood at the time — so today's J.S.S 1 students land back in Primary 4, since Primary 5 didn't exist yet). Any student who joined after that promotion is correctly left out.
+        <br/><br/>
+        It can only be run once per session, and it never touches your live/current data — only the archived view of the session you name.
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+        <div class="form-group" style="margin-bottom:0;">
+          <label>Session to reconstruct</label>
+          <input id="backfill-session" type="text" class="input" placeholder="e.g. 2025/2026" />
+        </div>
+        <button class="btn btn-secondary" onclick="backfillPreviousSession()">🕰️ Reconstruct This Session</button>
+      </div>
     </div>
 
   </div>
@@ -1422,6 +1605,27 @@ async function runPromotion() {
   }
 }
 
+async function backfillPreviousSession() {
+  const oldSession = document.getElementById('backfill-session')?.value.trim();
+  if (!oldSession) { alert('Please enter the session to reconstruct (e.g. 2025/2026).'); return; }
+  if (!confirm(
+    `Reconstruct "${oldSession}" from your current student data?\n\n` +
+    `Every graduated student will be recorded as having been active in ${ALL_CLASSES[ALL_CLASSES.length-1] || 'the top class'}, and everyone else will be placed one class back from where they are now (today's J.S.S 1 students → Primary 4). This can only be done once for this session.`
+  )) return;
+
+  try {
+    const res = await API.post('/api/students/backfill-previous-session', { session: oldSession });
+    alert(
+      `Reconstructed "${oldSession}" — ${res.created} of ${res.total} student(s) recorded.` +
+      (res.skippedNoPrevious > 0 ? `\n${res.skippedNoPrevious} student(s) skipped (they hadn't joined the school yet).` : '') +
+      `\n\nSwitch Academic Session to "${oldSession}" above and Save to view it.`
+    );
+    document.getElementById('backfill-session').value = '';
+  } catch (e) {
+    alert(e.message || 'Could not reconstruct that session.');
+  }
+}
+
 function previewStamp(input) {
   const file = input.files[0];
   if (!file) return;
@@ -1467,6 +1671,33 @@ function clearBursarSig() {
   DB.saveSettings(s).then(() => render());
 }
 
+// Quick session/term switch from the Students page filter bar — same
+// underlying save as the Settings page, just triggered inline.
+async function quickChangeSession(value) {
+  const s = DB.getSettings();
+  s.session = value.trim();
+  try {
+    await DB.saveSettings(s);
+    await DB.init(); // re-resolve students/results/milestones for the (possibly historical) session
+    render();
+  } catch (e) {
+    alert(e.message || 'Could not change session.');
+    render(); // revert the input back to the real saved value
+  }
+}
+async function quickChangeTerm(value) {
+  const s = DB.getSettings();
+  s.term = value;
+  try {
+    await DB.saveSettings(s);
+    await DB.init();
+    render();
+  } catch (e) {
+    alert(e.message || 'Could not change term.');
+    render();
+  }
+}
+
 async function saveSettings() {
   const existing = DB.getSettings();
   const s = {
@@ -1479,15 +1710,25 @@ async function saveSettings() {
     stampImage:    window._stampData || existing.stampImage || null,
     bursarSignature: window._bursarSigData || existing.bursarSignature || null,
   };
-  await DB.saveSettings(s);
-  window._stampData = null;
-  window._bursarSigData = null;
-  // Show toast
-  const toast = document.createElement('div');
-  toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1a6e3c;color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.2);';
-  toast.textContent = '✓ Settings saved!';
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 2500);
+  try {
+    await DB.saveSettings(s);
+    window._stampData = null;
+    window._bursarSigData = null;
+    // Session/term changed — students, results and milestones all need to be
+    // re-resolved for whatever session/term is now current (live or archived).
+    await DB.init();
+    render();
+    // Show toast
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1a6e3c;color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.2);';
+    toast.textContent = DB.getSettings().isHistoricalSession
+      ? `📅 Now viewing archived session "${s.session}" (read-only)`
+      : '✓ Settings saved!';
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+  } catch (e) {
+    alert(e.message || 'Could not save settings.');
+  }
 }
 
 // ── RESULT ACTIONS ────────────────────────────────────────────

@@ -335,6 +335,24 @@ async function initSchema() {
     );
   `);
 
+  // One row per (student, session) — a permanent snapshot of the class and
+  // status that student held during that session, written the moment the
+  // session is closed out by a promotion run. This is what lets Settings'
+  // Academic Session field act as a real "view this session" toggle:
+  // Students.list() reads from here for any session that has rows, and
+  // falls back to the live students table for the current, still-open one.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS student_class_history (
+      id          TEXT PRIMARY KEY,
+      "studentId" TEXT NOT NULL,
+      session     TEXT NOT NULL,
+      "classId"   TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'active',
+      "createdAt" TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE("studentId", session)
+    );
+  `);
+
   // Auto-migration: introduce the new "Primary 5" class, inserted right after
   // "Primary 4" in the class order. Runs once — later boots see the class
   // already present (in any session/term) and skip straight past this.
@@ -494,8 +512,43 @@ async function getCurrentSession(client = pool) {
   return rows[0]?.session || '';
 }
 
+// A session is "historical" once it's been closed out by a promotion run —
+// that's exactly when we snapshot every student's classId/status into
+// student_class_history for that session. While Settings is pointed at a
+// historical session, student data is read-only (see Students.save's guard)
+// so browsing the past can never silently overwrite the live roster.
+async function sessionIsHistorical(session, client = pool) {
+  if (!session) return false;
+  const { rows } = await client.query(
+    'SELECT 1 FROM student_class_history WHERE session=$1 LIMIT 1', [session]
+  );
+  return rows.length > 0;
+}
+
 const Students = {
+  // Session-aware: if the current Settings session has already been closed
+  // out by a promotion (i.e. it has snapshot rows in student_class_history),
+  // return everyone's classId/status AS OF that session instead of live data.
+  // Otherwise (the live/current session) return the students table as-is.
   list: async () => {
+    const currentSession = await getCurrentSession();
+    if (await sessionIsHistorical(currentSession)) {
+      const { rows } = await pool.query(`
+        SELECT s.id, s.name, s."daysAttended", s.passport, s."createdAt",
+               h."classId" AS "classId", h.status AS status
+        FROM students s
+        JOIN student_class_history h ON h."studentId" = s.id AND h.session = $1
+        ORDER BY h."classId", s.name
+      `, [currentSession]);
+      return rows;
+    }
+    const { rows } = await pool.query('SELECT * FROM students ORDER BY "classId", name');
+    return rows;
+  },
+  // Always the true current roster, ignoring whatever session Settings is
+  // displaying. Used by tools (like the Primary 5 correction screen) that
+  // must act on the live class a student is actually in right now.
+  listLive: async () => {
     const { rows } = await pool.query('SELECT * FROM students ORDER BY "classId", name');
     return rows;
   },
@@ -503,9 +556,21 @@ const Students = {
     const { rows } = await pool.query('SELECT * FROM students WHERE id=$1', [id]);
     return rows[0] || null;
   },
-  save: async (student) => {
+  // opts.force skips the "read-only while viewing history" guard — only the
+  // live-data correction tools (Students.moveClassLive) should pass it.
+  save: async (student, opts = {}) => {
     const id = student.id || 'stu_' + uid();
     const status = ['active','repeat','graduated'].includes(student.status) ? student.status : 'active';
+
+    if (!opts.force) {
+      const currentSession = await getCurrentSession();
+      if (await sessionIsHistorical(currentSession)) {
+        throw httpError(409,
+          `You're viewing the archived "${currentSession}" session, so student records are read-only here. ` +
+          `Switch Settings back to the current session to make changes.`
+        );
+      }
+    }
 
     const client = await pool.connect();
     try {
@@ -559,6 +624,13 @@ const Students = {
       client.release();
     }
   },
+  // Always writes to the live roster, regardless of what session Settings
+  // is currently displaying — for the Primary 5 / J.S.S 1 correction screen.
+  moveClassLive: async (id, newClassId) => {
+    const live = await Students.get(id);
+    if (!live) throw httpError(404, 'Student not found');
+    await Students.save({ ...live, classId: newClassId }, { force: true });
+  },
   delete: async (id) => {
     await pool.query('DELETE FROM students WHERE id=$1', [id]);
   },
@@ -595,6 +667,14 @@ const Students = {
     try {
       await client.query('BEGIN');
 
+      const currentSession = await getCurrentSession(client);
+      if (await sessionIsHistorical(currentSession, client)) {
+        throw httpError(409,
+          `The "${currentSession}" session has already been closed out by a previous promotion. ` +
+          `Switch Settings to the live/current session before promoting again.`
+        );
+      }
+
       // Same ordering logic as ClassSubjects.getAll: earliest "position" a
       // classId was ever seeded/edited at, across all sessions/terms.
       const { rows: orderRows } = await client.query(
@@ -607,8 +687,19 @@ const Students = {
       classOrder.forEach((c, i) => { if (i < classOrder.length - 1) nextClass[c] = classOrder[i + 1]; });
       delete nextClass[BRANCH_CLASS]; // never auto-promoted — admin decides
 
-      const currentSession = await getCurrentSession(client);
       const { rows: students } = await client.query('SELECT id, "classId", status FROM students');
+
+      // Snapshot everyone's classId/status exactly as it stood for the
+      // session that's now ending — this is what makes switching Settings
+      // back to this session later show the true historical picture.
+      for (const s of students) {
+        await client.query(
+          `INSERT INTO student_class_history (id, "studentId", session, "classId", status)
+           VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT ("studentId", session) DO UPDATE SET "classId"=$4, status=$5`,
+          ['sch_' + uid(), s.id, currentSession, s.classId, s.status]
+        );
+      }
 
       let promoted = 0, repeated = 0, graduated = 0, needsDecision = 0, skipped = 0;
       for (const s of students) {
@@ -658,6 +749,60 @@ const Students = {
     } finally {
       client.release();
     }
+  },
+
+  // ── One-time historical reconstruction ──────────────────────────────
+  // For promotions that already happened before this history feature
+  // existed (so nothing was ever snapshotted for that old session). Works
+  // backwards from the CURRENT live roster by reversing exactly one
+  // promotion step, using the class order as it stood *before* Primary 5
+  // was introduced (since that's the order that was actually in effect
+  // when that promotion ran):
+  //   • currently 'graduated'      → was 'active' in the top class (S.S 3)
+  //   • everyone else              → was one class earlier, active
+  //     (this naturally puts current J.S.S 1 students back in Primary 4,
+  //     since Primary 4 is what came right before J.S.S 1 back then)
+  //   • students already sitting in the very first class have no valid
+  //     "previous" class — they simply weren't enrolled yet, so they're
+  //     left out of that historical session, which is correct.
+  // Refuses to run if the target session already has any history rows,
+  // so it can only ever be applied once per session.
+  backfillPreviousSession: async (oldSession) => {
+    if (!oldSession) throw httpError(400, 'Please provide the previous session label.');
+    if (await sessionIsHistorical(oldSession)) {
+      throw httpError(409, `"${oldSession}" already has historical records — this can only be run once per session.`);
+    }
+
+    const { rows: orderRows } = await pool.query(
+      `SELECT "classId", MIN(position) AS position FROM class_subjects
+       WHERE "classId" != 'Primary 5' GROUP BY "classId" ORDER BY position, "classId"`
+    );
+    const classOrder = orderRows.map(r => r.classId);
+    if (classOrder.length === 0) throw httpError(400, 'No classes are configured yet.');
+    const topClass = classOrder[classOrder.length - 1];
+    const prevClass = {};
+    classOrder.forEach((c, i) => { if (i > 0) prevClass[c] = classOrder[i - 1]; });
+
+    const { rows: students } = await pool.query('SELECT id, "classId", status FROM students');
+
+    let created = 0, skippedNoPrevious = 0;
+    for (const s of students) {
+      let histClass;
+      if (s.status === 'graduated') {
+        histClass = topClass;
+      } else {
+        histClass = prevClass[s.classId];
+        if (!histClass) { skippedNoPrevious++; continue; }
+      }
+      await pool.query(
+        `INSERT INTO student_class_history (id, "studentId", session, "classId", status)
+         VALUES ($1,$2,$3,$4,'active')
+         ON CONFLICT ("studentId", session) DO NOTHING`,
+        ['sch_' + uid(), s.id, oldSession, histClass]
+      );
+      created++;
+    }
+    return { created, skippedNoPrevious, total: students.length };
   },
 };
 
@@ -1081,5 +1226,5 @@ const ClassSubjects = {
   },
 };
 
-module.exports = { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, ClassSubjects, Milestones, uid };
+module.exports = { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, ClassSubjects, Milestones, sessionIsHistorical, uid };
 

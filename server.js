@@ -6,7 +6,7 @@ const express  = require('express');
 const cors     = require('cors');
 const jwt      = require('jsonwebtoken');
 const path     = require('path');
-const { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, ClassSubjects, Milestones, uid } = require('./db');
+const { pool, initSchema, Users, Students, Results, Settings, ShareTokens, Receipts, Applicants, ClassSubjects, Milestones, sessionIsHistorical, uid } = require('./db');
 
 const app    = express();
 const PORT   = process.env.PORT || 3000;
@@ -80,6 +80,25 @@ app.get('/api/students', requireAuth, async (req, res) => {
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Always the true current roster, regardless of what session Settings is
+// displaying — used by correction tools (e.g. moving a J.S.S 1 student back
+// to Primary 5) that must act on live data even while browsing history.
+app.get('/api/students/live', requireAdmin, async (req, res) => {
+  try { res.json(await Students.listLive()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Moves a student's live class, bypassing the "read-only while viewing an
+// archived session" guard — deliberately, since this is a live correction.
+app.post('/api/students/:id/move-class-live', requireAdmin, async (req, res) => {
+  try {
+    const { classId } = req.body;
+    if (!classId) return res.status(400).json({ error: 'classId is required' });
+    await Students.moveClassLive(req.params.id, classId);
+    res.json({ ok: true });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
 app.get('/api/students/by-class/:classId', requireAdmin, async (req, res) => {
   try {
     const classId = decodeURIComponent(req.params.classId);
@@ -95,7 +114,7 @@ app.get('/api/students/by-class/:classId', requireAdmin, async (req, res) => {
 
 app.post('/api/students', requireAdmin, async (req, res) => {
   try { await Students.save(req.body); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
 
 app.delete('/api/students/:id', requireAdmin, async (req, res) => {
@@ -114,6 +133,16 @@ app.delete('/api/students/:id', requireAdmin, async (req, res) => {
 app.post('/api/students/promote', requireAdmin, async (req, res) => {
   try {
     const summary = await Students.promoteAll();
+    res.json({ ok: true, ...summary });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// One-time reconstruction of a session that was already promoted away from
+// before this history feature existed (so nothing was ever snapshotted for
+// it). See Students.backfillPreviousSession for exactly what it computes.
+app.post('/api/students/backfill-previous-session', requireAdmin, async (req, res) => {
+  try {
+    const summary = await Students.backfillPreviousSession((req.body?.session || '').trim());
     res.json({ ok: true, ...summary });
   } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
@@ -152,6 +181,7 @@ app.get('/api/settings', requireAuth, async (req, res) => {
   try {
     const s = await Settings.get();
     const { adminPassword, ...safe } = s;
+    safe.isHistoricalSession = await sessionIsHistorical(s.session);
     res.json(safe);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
