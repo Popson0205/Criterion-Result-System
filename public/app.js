@@ -28,6 +28,7 @@ function doLogout() {
   sessionStorage.removeItem('cc_token');
   sessionStorage.removeItem('cc_role');
   sessionStorage.removeItem('cc_user');
+  sessionStorage.removeItem('cc_school');
   DB.invalidate();
   currentPage = 'dashboard';
   renderLoginPage();
@@ -77,8 +78,95 @@ function navigate(page, params={}) {
   }
 }
 
-// ── LOGIN PAGE ────────────────────────────────────────────────
+// ── LOGIN / HOME PAGES ────────────────────────────────────────
+// Entry points:  /          → home: choose a school (or Admin / Bursar)
+//                /primary   → Nursery & Primary School teacher/admin login
+//                /college   → College Osogbo teacher/admin login
+//                /admin     → Admin / Bursar login (the original admin portal)
+let _loginPortal = 'admin'; // 'primary' | 'college' | 'admin' — sent to /api/login
+
+function portalFromPath() {
+  const p = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+  if (p === '/primary') return 'primary';
+  if (p === '/college') return 'college';
+  if (p === '/admin')   return 'admin';
+  return '';
+}
+function goPortal(portal) {
+  const path = portal === 'admin' ? '/admin' : SCHOOLS[portal].path;
+  history.pushState({}, '', path);
+  renderLoginPage();
+}
+function goHome() {
+  history.pushState({}, '', '/');
+  renderLoginPage();
+}
+
 function renderLoginPage() {
+  const portal = portalFromPath();
+  if (portal === 'primary' || portal === 'college') return renderSchoolLogin(portal);
+  if (portal === 'admin') return renderAdminLogin();
+  return renderHomePage();
+}
+
+function renderHomePage() {
+  _loginPortal = '';
+  const card = (key) => {
+    const sc = SCHOOLS[key];
+    return `
+      <button class="school-card" onclick="goPortal('${key}')">
+        <img src="${sc.logo}" alt="${escapeHtml(sc.name)} logo" />
+        <div class="school-card-name">${escapeHtml(sc.name)}</div>
+        <div class="school-card-range">${escapeHtml(sc.range)}</div>
+        <span class="school-card-cta">Enter results →</span>
+      </button>`;
+  };
+  document.getElementById('app').innerHTML = `
+  <div class="home-screen">
+    <div class="home-head">
+      <div class="home-title">Result Management System</div>
+      <div class="home-sub">Choose your school to continue</div>
+    </div>
+    <div class="school-grid">
+      ${card('primary')}
+      ${card('college')}
+    </div>
+    <button class="home-admin-link" onclick="goPortal('admin')">🔐 Admin / Bursar login</button>
+  </div>`;
+}
+
+function renderSchoolLogin(key) {
+  _loginPortal = key;
+  const sc = SCHOOLS[key];
+  document.getElementById('app').innerHTML = `
+  <div class="login-screen">
+    <div class="card login-card">
+      <div class="login-logo">
+        <img src="${sc.logo}" alt="" style="width:120px;height:120px;object-fit:contain;display:block;margin:0 auto;border-radius:0;" />
+        <div class="login-school" style="text-transform:uppercase;">${escapeHtml(sc.name)}</div>
+        <div class="login-sub">Result Entry Portal &nbsp;·&nbsp; ${escapeHtml(sc.range)}</div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:14px;">
+        <label>Username</label>
+        <input id="login-username" type="text" class="input" placeholder="Your username" autocomplete="username"
+          onkeydown="if(event.key==='Enter')doLogin()" />
+      </div>
+      <div class="form-group" style="margin-bottom:20px;">
+        <label>Password</label>
+        <input id="login-password" type="password" class="input" placeholder="••••••••" autocomplete="current-password"
+          onkeydown="if(event.key==='Enter')doLogin()" />
+      </div>
+      <div id="login-error" style="color:#dc2626;font-size:13px;margin-bottom:12px;min-height:18px;"></div>
+      <button class="btn btn-primary" style="width:100%;" onclick="doLogin()">Sign In →</button>
+      <div class="login-back"><a href="/" onclick="event.preventDefault();goHome();">← Choose a different school</a></div>
+    </div>
+  </div>`;
+  setTimeout(() => { const u = document.getElementById('login-username'); if (u) u.focus(); }, 100);
+}
+
+function renderAdminLogin() {
+  _loginPortal = 'admin';
   const logoHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
     ? `<img src="${SCHOOL_LOGO}" style="width:90px;height:90px;object-fit:contain;border-radius:50%;display:block;margin:0 auto;" />`
     : `<div style="width:90px;height:90px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:28px;margin:0 auto;">CC</div>`;
@@ -97,11 +185,6 @@ function renderLoginPage() {
           <div class="role-icon">🔐</div>
           <div class="role-label">Admin</div>
           <div class="role-desc">Full access</div>
-        </button>
-        <button class="role-btn" id="btn-teacher" onclick="selectRole('teacher')">
-          <div class="role-icon">👩‍🏫</div>
-          <div class="role-label">Teacher</div>
-          <div class="role-desc">Score entry</div>
         </button>
         <button class="role-btn" id="btn-bursar" onclick="selectRole('bursar')">
           <div class="role-icon">💰</div>
@@ -122,6 +205,8 @@ function renderLoginPage() {
       </div>
       <div id="login-error" style="color:#dc2626;font-size:13px;margin-bottom:12px;min-height:18px;"></div>
       <button class="btn btn-primary" style="width:100%;" onclick="doLogin()">Sign In →</button>
+      <div class="login-back"><a href="/" onclick="event.preventDefault();goHome();">← Back to school selection</a></div>
+      <div class="login-back" style="margin-top:4px;font-size:11px;">Teachers: sign in from your school's card on the home page.</div>
     </div>
   </div>`;
 }
@@ -130,7 +215,6 @@ let _selectedRole = 'admin';
 function selectRole(role) {
   _selectedRole = role;
   document.getElementById('btn-admin').classList.toggle('active', role === 'admin');
-  document.getElementById('btn-teacher').classList.toggle('active', role === 'teacher');
   const bursarBtn = document.getElementById('btn-bursar');
   if (bursarBtn) bursarBtn.classList.toggle('active', role === 'bursar');
   document.getElementById('login-username').value = role === 'admin' ? 'admin' : '';
@@ -147,14 +231,17 @@ async function doLogin() {
     const res  = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password, portal: _loginPortal || undefined })
     });
     const data = await res.json();
     if (!res.ok) { errEl.textContent = data.error || 'Login failed'; return; }
     sessionStorage.setItem('cc_token', data.token);
     sessionStorage.setItem('cc_role',  data.role);
     sessionStorage.setItem('cc_user',  JSON.stringify({ name: data.name, username: data.username, role: data.role }));
-    currentPage = data.role === 'teacher' ? 'results' : data.role === 'bursar' ? 'receipts' : 'dashboard';
+    sessionStorage.setItem('cc_school', data.school || '');
+    currentClass = '';
+    // Anyone who came in through a school portal lands on that school's Results.
+    currentPage = (data.role === 'teacher' || data.school) ? 'results' : data.role === 'bursar' ? 'receipts' : 'dashboard';
     try {
       await DB.init();
     } catch(initErr) {
@@ -214,10 +301,17 @@ function attachLoginEvents() {}  // no-op, kept for compat
 function renderSidebar() {
   const admin = isAdmin();
   const user  = API.getUser() || {};
-  const logoImgHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
-    ? `<img src="${SCHOOL_LOGO}" style="width:38px;height:38px;border-radius:50%;object-fit:contain;border:2px solid rgba(255,255,255,0.3);" />`
-    : `<div class="logo-circle-sm">CC</div>`;
-  const nav = [
+  const school = currentSchool(); // null in the Admin portal
+  const logoImgHTML = school
+    ? `<img src="${school.logo}" style="width:40px;height:40px;object-fit:contain;background:#fff;border-radius:8px;padding:2px;" />`
+    : (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
+      ? `<img src="${SCHOOL_LOGO}" style="width:38px;height:38px;border-radius:50%;object-fit:contain;border:2px solid rgba(255,255,255,0.3);" />`
+      : `<div class="logo-circle-sm">CC</div>`;
+  // School portals are a focused result-entry workspace; the Admin portal keeps its full menu.
+  const nav = school ? [
+    { id:'results', icon:'📋', label:'Results' },
+    ...(admin ? [{ id:'batch_print', icon:'🖨️', label:'Batch Print' }] : []),
+  ] : [
     ...(admin ? [{ id:'dashboard',   icon:'🏠', label:'Dashboard' }]   : []),
     ...(admin ? [{ id:'students',    icon:'👥', label:'Students' }]    : []),
     { id:'results',     icon:'📋', label:'Results' },
@@ -235,8 +329,8 @@ function renderSidebar() {
     <div class="sidebar-logo">
       ${logoImgHTML}
       <div>
-        <div class="sidebar-school">Criterion Amazing College</div>
-        <div class="sidebar-sub">${admin ? 'Admin Portal' : 'Teacher Portal'}</div>
+        <div class="sidebar-school">${school ? escapeHtml(school.name) : 'Criterion Amazing College'}</div>
+        <div class="sidebar-sub">${school ? (admin ? 'Admin · Result Entry' : 'Teacher Portal') : (admin ? 'Admin Portal' : 'Teacher Portal')}</div>
       </div>
     </div>
     <nav class="sidebar-nav">
@@ -532,10 +626,11 @@ function downloadClassList(classId) {
   // Sort alphabetically
   const sorted = [...students].sort((a, b) => a.name.localeCompare(b.name));
 
-  // School logo HTML for the header
-  const logoSrc = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO) ? SCHOOL_LOGO : null;
+  // School logo + name follow the class (Nursery & Primary vs College)
+  const school  = schoolOfClass(classId);
+  const logoSrc = school.logo;
   const logoTag = logoSrc
-    ? `<img src="${logoSrc}" style="width:80px;height:80px;object-fit:contain;border-radius:50%;border:2px solid #1a6e3c;" />`
+    ? `<img src="${logoSrc}" style="width:80px;height:80px;object-fit:contain;" />`
     : `<div style="width:80px;height:80px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:26px;">CC</div>`;
 
   const rows = sorted.map((s, i) => {
@@ -559,7 +654,7 @@ function downloadClassList(classId) {
 <html>
 <head>
   <meta charset="UTF-8" />
-  <title>${classId} — Student List — Criterion Amazing College</title>
+  <title>${classId} — Student List — ${school.name}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap');
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -701,7 +796,7 @@ function downloadClassList(classId) {
   <div class="school-header">
     <div>${logoTag}</div>
     <div class="school-info">
-      <div class="school-name">Criterion Amazing College</div>
+      <div class="school-name">${school.name}</div>
       <div class="school-address">Osogbo, Osun State, Nigeria</div>
       ${settings.schoolMotto ? `<div class="school-motto">"${settings.schoolMotto}"</div>` : ''}
     </div>
@@ -754,7 +849,7 @@ function downloadClassList(classId) {
       <div class="signature-label">Class Teacher's Signature</div>
     </div>
     <div style="font-size:11px;color:#bbb;text-align:center;">
-      Criterion Amazing College — Result Management System<br/>
+      ${school.name} — Result Management System<br/>
       Generated: ${new Date().toLocaleString('en-NG')}
     </div>
     <div class="signature-block">
@@ -770,7 +865,7 @@ function downloadClassList(classId) {
   const win = window.open('', '_blank');
   win.document.write(html);
   win.document.close();
-  win.document.title = classId + ' — Student List — Criterion Amazing College';
+  win.document.title = classId + ' — Student List — ' + school.name;
 }
 
 // ── ADD/EDIT STUDENT ──────────────────────────────────────────
@@ -1144,14 +1239,14 @@ function renderResults() {
 
   return `
   <div class="page-header">
-    <h1 class="page-title">Results</h1>
-    <div style="display:flex;gap:8px;align-items:center;"><div style="font-size:13px;color:var(--text-muted);">${settings.session} · ${settings.term}</div><button class="btn btn-secondary btn-sm" onclick="navigate('batch_print')">🖨️ Batch Print</button></div>
+    <h1 class="page-title">Results${currentSchool() ? ' — ' + escapeHtml(currentSchool().short) : ''}</h1>
+    <div style="display:flex;gap:8px;align-items:center;"><div style="font-size:13px;color:var(--text-muted);">${settings.session} · ${settings.term}</div>${isAdmin() ? `<button class="btn btn-secondary btn-sm" onclick="navigate('batch_print')">🖨️ Batch Print</button>` : ''}</div>
   </div>
   <div class="filter-bar card" style="margin-bottom:16px;">
     <label style="font-size:12px;font-weight:600;color:var(--text-muted);">Filter by Class</label>
     <select class="input" style="width:200px;" onchange="currentClass=this.value;render();">
       <option value="">All Classes</option>
-      ${ALL_CLASSES.map(c=>`<option value="${c}" ${filterClass===c?'selected':''}>${c}</option>`).join('')}
+      ${visibleClasses().map(c=>`<option value="${c}" ${filterClass===c?'selected':''}>${c}</option>`).join('')}
     </select>
   </div>
   <div class="card" style="padding:0;overflow:hidden;">
@@ -1818,7 +1913,7 @@ async function shareResult(studentId) {
   const token = await DB.createShareToken(studentId, settings.session, settings.term);
   const student = DB.getStudent(studentId);
   const nameSlug = student ? student.name.trim().replace(/\s+/g, '-') : 'result';
-  const url = window.location.origin + window.location.pathname + '?share=' + token + '&name=' + encodeURIComponent(nameSlug);
+  const url = window.location.origin + '/?share=' + token + '&name=' + encodeURIComponent(nameSlug);
   // Copy to clipboard
   navigator.clipboard.writeText(url).catch(()=>{});
   // Show modal
@@ -1894,9 +1989,12 @@ async function boot() {
     sessionStorage.removeItem('cc_token');
     sessionStorage.removeItem('cc_role');
     sessionStorage.removeItem('cc_user');
+    sessionStorage.removeItem('cc_school');
     renderLoginPage();
   }
 }
+// Back/forward between Home ↔ school login ↔ admin login (no page reload).
+window.addEventListener('popstate', () => { if (!API.getToken()) renderLoginPage(); });
 boot();
 
 

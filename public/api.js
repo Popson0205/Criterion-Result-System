@@ -27,7 +27,8 @@ const API = {
       sessionStorage.removeItem('cc_token');
       sessionStorage.removeItem('cc_role');
       sessionStorage.removeItem('cc_user');
-      window.location.href = '/';
+      sessionStorage.removeItem('cc_school');
+      window.location.href = window.location.pathname === '/' ? '/' : window.location.pathname;
       return;
     }
     const data = await res.json().catch(() => ({}));

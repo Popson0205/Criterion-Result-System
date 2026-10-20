@@ -7,6 +7,9 @@
 function openAdmissionLetterWindow(applicant) {
   const a = applicant;
   const fullName = [a.surname, a.first_name, a.other_name].filter(Boolean).join(' ');
+  // Letterhead follows the class they were admitted into (Nursery & Primary vs College)
+  const school = schoolOfClass(a.class_admitted);
+  const schoolTitle = school.headerLines.join(' ');
   const admittedDate = a.admittedAt
     ? new Date(a.admittedAt).toLocaleDateString('en-NG', { day:'numeric', month:'long', year:'numeric' })
     : new Date().toLocaleDateString('en-NG', { day:'numeric', month:'long', year:'numeric' });
@@ -29,7 +32,7 @@ function openAdmissionLetterWindow(applicant) {
       display: flex; align-items: center; justify-content: center; gap: 18px;
       margin-bottom: 8px; border-bottom: 3px solid #f5c518; padding-bottom: 16px;
     }
-    .letterhead img { width: 80px; height: 80px; border-radius: 50%; object-fit: contain; border: 3px solid #1a6e3c; }
+    .letterhead img { width: 90px; height: 90px; object-fit: contain; }
     .letterhead .logo-ph {
       width: 80px; height: 80px; border-radius: 50%; background: #1a6e3c;
       display: flex; align-items: center; justify-content: center;
@@ -105,13 +108,13 @@ function openAdmissionLetterWindow(applicant) {
 <div class="letter-page">
 
   <div class="letterhead">
-    <img src="/icons/icon-192x192.png" alt="Criterion Amazing College Logo"
+    <img src="${school.logo}" alt="${school.name} Logo"
          onerror="this.style.display='none';document.getElementById('lhPh').style.display='flex'" />
     <div class="logo-ph" id="lhPh" style="display:none">CC</div>
     <div class="school-name-hdr">
-      <h1>CRITERION AMAZING COLLEGE, OSOGBO</h1>
+      <h1>${schoolTitle}</h1>
       <div class="phone">+234 806 322 4872</div>
-      <div class="motto">….training global competitive students is our watchword</div>
+      <div class="motto">${school.motto}</div>
     </div>
   </div>
 
@@ -146,7 +149,7 @@ function openAdmissionLetterWindow(applicant) {
     <p>Dear <strong>${a.parent_name || 'Parent/Guardian'}</strong>,</p>
     <p>
       We are pleased to inform you that your ward, <strong>${fullName}</strong>, has been
-      <strong>successfully admitted</strong> into Criterion Amazing College, Osogbo for the
+      <strong>successfully admitted</strong> into ${school.name} for the
       <strong>2026/2027 Academic Session</strong>, having satisfied the requirements for admission.
     </p>
     <p>
@@ -177,17 +180,17 @@ function openAdmissionLetterWindow(applicant) {
   <div class="letter-body">
     <p>
       By accepting this admission, you confirm that you have read, understood, and agreed to abide by
-      all the rules and regulations of Criterion Amazing College, Osogbo. We look forward to a productive and
+      all the rules and regulations of ${school.name}. We look forward to a productive and
       successful academic journey with your ward.
     </p>
-    <p>Congratulations and welcome to the Criterion Amazing College family!</p>
+    <p>Congratulations and welcome to the ${school.commentName} family!</p>
   </div>
 
   <div class="signature-section">
     <div class="sig-block">
       <div class="sig-line"></div>
       <div class="sig-label">Principal's Signature</div>
-      <div class="sig-sub">Criterion Amazing College, Osogbo</div>
+      <div class="sig-sub">${school.name}</div>
     </div>
     <div class="sig-block">
       <div class="sig-line"></div>
@@ -202,8 +205,8 @@ function openAdmissionLetterWindow(applicant) {
   </div>
 
   <div class="letter-footer">
-    Criterion Amazing College, Osogbo &nbsp;|&nbsp; +234 806 322 4872 &nbsp;|&nbsp;
-    ….training global competitive students is our watchword
+    ${school.name} &nbsp;|&nbsp; +234 806 322 4872 &nbsp;|&nbsp;
+    ${school.motto}
   </div>
 
 </div>

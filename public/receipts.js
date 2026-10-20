@@ -475,8 +475,9 @@ function rcptPrint(id, studentName, term, session, balance) {
 function buildReceiptCardHTML(r, total, totalWords, settings) {
   settings = settings || {};
 
-  const logoHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
-    ? `<img src="${SCHOOL_LOGO}" style="width:70px;height:70px;object-fit:contain;border-radius:50%;border:2px solid #1a6e3c;">`
+  const school = schoolOfClass(r.classId); // receipt carries the school of the student's class
+  const logoHTML = school.logo
+    ? `<img src="${school.logo}" style="width:70px;height:70px;object-fit:contain;">`
     : `<div style="width:70px;height:70px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:24px;">CC</div>`;
 
   const passportHTML = r.passport
@@ -504,7 +505,7 @@ function buildReceiptCardHTML(r, total, totalWords, settings) {
       <!-- Centre: logo + school name -->
       <div style="flex:1;text-align:center;">
         <div style="display:inline-block;">${logoHTML}</div>
-        <div style="font-size:18px;font-weight:900;color:#1a6e3c;letter-spacing:0.5px;margin-top:6px;text-transform:uppercase;">CRITERION AMAZING COLLEGE, OSOGBO</div>
+        <div style="font-size:${school.headerLines.length > 1 ? 15 : 18}px;font-weight:900;color:#1a6e3c;letter-spacing:0.5px;margin-top:6px;text-transform:uppercase;line-height:1.15;">${school.headerLines.join('<br/>')}</div>
         <div style="background:#222;color:#fff;font-weight:700;font-size:12px;padding:2px 14px;border-radius:4px;display:inline-block;margin-top:4px;">08063224872</div>
       </div>
 

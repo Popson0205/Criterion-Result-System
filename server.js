@@ -21,9 +21,10 @@ app.use(express.static(path.join(__dirname, 'public'), {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
-    } else if (/\.(js|css)$/.test(filePath)) {
-      // Cache JS/CSS briefly — short enough that a redeploy is picked up fast
-      res.setHeader('Cache-Control', 'public, max-age=300');
+    } else if (/\.(js|css|json)$/.test(filePath)) {
+      // Always revalidate (cheap 304 via ETag) so a redeploy reaches every
+      // phone straight away instead of waiting out a cache timer.
+      res.setHeader('Cache-Control', 'no-cache');
     }
   }
 }));
@@ -56,19 +57,54 @@ function requireBursar(req, res, next) {
   });
 }
 
+// ── SCHOOLS ───────────────────────────────────────────────────
+// Two schools share this system: 'primary' (Creche 1 – Primary 5) and
+// 'college' (J.S.S 1 – S.S 3). A student's school is decided by their class.
+// A token issued through a school portal carries { school }, and every
+// student/result endpoint below only returns / accepts that school's data.
+// Tokens from the Admin portal carry no school and see everything.
+const SCHOOL_KEYS = ['primary', 'college'];
+function schoolKeyOfClass(classId) {
+  return /^(J\.S\.S|S\.S)/i.test(String(classId || '').trim()) ? 'college' : 'primary';
+}
+function inScope(user, classId) {
+  return !user.school || schoolKeyOfClass(classId) === user.school;
+}
+async function assertStudentInScope(user, studentId) {
+  if (!user.school) return;
+  const list = await Students.list();
+  const s = list.find(x => x.id === studentId) || await Students.get(studentId);
+  if (!s) { const e = new Error('Student not found'); e.status = 404; throw e; }
+  if (!inScope(user, s.classId)) {
+    const e = new Error("That student belongs to the other school's portal."); e.status = 403; throw e;
+  }
+}
+
 // ── LOGIN ─────────────────────────────────────────────────────
 app.post('/api/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, portal } = req.body;
     const user = await Users.findByUsername(username);
     if (!user || !Users.verifyPassword(user, password))
       return res.status(401).json({ error: 'Invalid username or password' });
+
+    // Which door they came through: 'primary' | 'college' | 'admin'.
+    // (No portal = older client; behaves exactly as before, unscoped.)
+    let school = '';
+    if (SCHOOL_KEYS.includes(portal)) {
+      if (user.role === 'bursar')
+        return res.status(403).json({ error: 'Bursar accounts sign in from the Admin / Bursar login on the home page.' });
+      school = portal;
+    } else if (portal === 'admin' && user.role === 'teacher') {
+      return res.status(403).json({ error: "Teacher accounts sign in from their school's portal — go back to the home page and choose your school." });
+    }
+
     const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role, name: user.name },
+      { id: user.id, username: user.username, role: user.role, name: user.name, school },
       SECRET,
       { expiresIn: '12h' }
     );
-    res.json({ token, role: user.role, name: user.name, username: user.username });
+    res.json({ token, role: user.role, name: user.name, username: user.username, school });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -76,7 +112,10 @@ app.post('/api/login', async (req, res) => {
 
 // ── STUDENTS ──────────────────────────────────────────────────
 app.get('/api/students', requireAuth, async (req, res) => {
-  try { res.json(await Students.list()); }
+  try {
+    const all = await Students.list();
+    res.json(req.user.school ? all.filter(s => inScope(req.user, s.classId)) : all);
+  }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -159,21 +198,34 @@ app.get('/api/milestones', requireAdmin, async (req, res) => {
 
 // ── RESULTS ───────────────────────────────────────────────────
 app.get('/api/results', requireAuth, async (req, res) => {
-  try { res.json(await Results.list()); }
+  try {
+    let results = await Results.list();
+    if (req.user.school) {
+      const students = await Students.list();
+      const ids = new Set(students.filter(s => inScope(req.user, s.classId)).map(s => s.id));
+      results = results.filter(r => ids.has(r.studentId));
+    }
+    res.json(results);
+  }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/results/:studentId/:session/:term', requireAuth, async (req, res) => {
   try {
     const { studentId, session, term } = req.params;
+    await assertStudentInScope(req.user, studentId);
     const result = await Results.get(studentId, decodeURIComponent(session), decodeURIComponent(term));
     res.json(result || null);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
 
 app.post('/api/results', requireAuth, async (req, res) => {
-  try { await Results.save(req.body); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  try {
+    await assertStudentInScope(req.user, req.body && req.body.studentId);
+    await Results.save(req.body);
+    res.json({ ok: true });
+  }
+  catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
 
 // ── SETTINGS ──────────────────────────────────────────────────
@@ -311,9 +363,10 @@ app.delete('/api/bursars/:id', requireAdmin, async (req, res) => {
 app.post('/api/share', requireAuth, async (req, res) => {
   try {
     const { studentId, session, term } = req.body;
+    await assertStudentInScope(req.user, studentId);
     const token = await ShareTokens.create(studentId, session, term);
     res.json({ token });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
 });
 
 app.get('/api/share/:token', async (req, res) => {

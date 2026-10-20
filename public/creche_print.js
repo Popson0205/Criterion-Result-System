@@ -183,8 +183,9 @@ function buildCrecheResultHTML(student, result, position, totalStudents) {
     ? new Date(settings.resumptionDate).toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' })
     : '—';
 
-  const logoHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
-    ? `<img src="${SCHOOL_LOGO}" style="width:90px;height:90px;object-fit:contain;" />`
+  const school = schoolOfClass(student.classId);
+  const logoHTML = school.logo
+    ? `<img src="${school.logo}" style="width:90px;height:90px;object-fit:contain;" />`
     : `<div style="width:90px;height:90px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:28px;font-family:'Times New Roman',serif;">CC</div>`;
 
   const passportHTML = student.passport
@@ -195,9 +196,9 @@ function buildCrecheResultHTML(student, result, position, totalStudents) {
     ? `<img src="${settings.stampImage}" style="max-width:220px;max-height:70px;width:auto;height:auto;object-fit:contain;display:block;" />`
     : '';
 
-  const watermarkHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
+  const watermarkHTML = school.logo
     ? `<div style="position:absolute;top:0;left:0;right:0;bottom:0;margin:auto;width:380px;height:380px;transform:rotate(-20deg);opacity:0.02;pointer-events:none;z-index:0;display:flex;align-items:center;justify-content:center;">
-        <img src="${SCHOOL_LOGO}" style="width:380px;height:380px;object-fit:contain;" />
+        <img src="${school.logo}" style="width:380px;height:380px;object-fit:contain;" />
        </div>`
     : '';
 
@@ -263,7 +264,7 @@ function buildCrecheResultHTML(student, result, position, totalStudents) {
     <tr>
       <td style="border:none;width:100px;text-align:center;vertical-align:middle;">${logoHTML}</td>
       <td style="border:none;text-align:center;vertical-align:middle;padding:0 12px;">
-        <div style="font-size:32px;font-weight:900;color:#55A845;text-transform:uppercase;letter-spacing:1px;line-height:1.1;">CRITERION AMAZING COLLEGE, OSOGBO</div>
+        ${schoolHeaderHTML(school, 32)}
         <div style="font-size:16px;font-weight:bold;color:#181717;text-transform:uppercase;letter-spacing:3px;margin-top:7px;border-top:3px solid #55A845;border-bottom:2px solid #55A845;padding:5px 0;">PROGRESS REPORT SHEET</div>
       </td>
       <td style="border:none;width:100px;text-align:center;vertical-align:middle;">${passportHTML}</td>

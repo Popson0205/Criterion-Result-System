@@ -103,8 +103,10 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
   else if (subjectCount <= 13) sizeScale = 1.18;
   else                          sizeScale = 1.10;
 
-  const teacherComment   = (result.teacherComment   && result.teacherComment.trim())   ? result.teacherComment   : getTeacherComment(avg);
-  const principalComment = (result.principalComment && result.principalComment.trim()) ? result.principalComment : getPrincipalComment(avg);
+  const _sch = schoolOfClass(student.classId);
+  const nameFix = t => String(t).replace(/Criterion Amazing College/g, _sch.commentName);
+  const teacherComment   = (result.teacherComment   && result.teacherComment.trim())   ? result.teacherComment   : nameFix(getTeacherComment(avg));
+  const principalComment = (result.principalComment && result.principalComment.trim()) ? result.principalComment : nameFix(getPrincipalComment(avg));
 
   const resumptionFormatted = settings.resumptionDate
     ? new Date(settings.resumptionDate).toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' })
@@ -116,8 +118,9 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
   // Only top 5 get a position; others get blank
   const posStr = (position && position <= 5) ? getOrdinal(position) : '';
 
-  const logoHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
-    ? `<img src="${SCHOOL_LOGO}" style="width:76px;height:76px;object-fit:contain;" />`
+  const school = schoolOfClass(student.classId); // Nursery & Primary vs College — decided by the student's class
+  const logoHTML = school.logo
+    ? `<img src="${school.logo}" style="width:76px;height:76px;object-fit:contain;" />`
     : `<div style="width:76px;height:76px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:24px;">CC</div>`;
 
   const passportHTML = student.passport
@@ -130,9 +133,9 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
     : `<div style="width:${Math.round(220*sizeScale)}px;height:${Math.round(80*sizeScale)}px;border:2px dashed #ccc;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;color:#ccc;text-align:center;">Upload<br/>Stamp</div>`;
 
   // Watermark
-  const watermarkHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
+  const watermarkHTML = school.logo
     ? `<div style="position:absolute;top:0;left:0;right:0;bottom:0;margin:auto;width:320px;height:320px;transform:rotate(-20deg);opacity:0.02;pointer-events:none;z-index:0;display:flex;align-items:center;justify-content:center;">
-        <img src="${SCHOOL_LOGO}" style="width:320px;height:320px;object-fit:contain;" />
+        <img src="${school.logo}" style="width:320px;height:320px;object-fit:contain;" />
        </div>`
     : '';
 
@@ -206,7 +209,7 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
     <tr>
       <td style="border:none;width:84px;text-align:center;vertical-align:middle;">${logoHTML}</td>
       <td style="border:none;text-align:center;vertical-align:middle;padding:0 10px;">
-        <div style="font-size:28px;font-weight:900;color:#55A845;text-transform:uppercase;letter-spacing:1px;line-height:1.1;">CRITERION AMAZING COLLEGE, OSOGBO</div>
+        ${schoolHeaderHTML(school, 28)}
         <div style="font-size:13px;font-weight:bold;color:#181717;text-transform:uppercase;letter-spacing:3px;margin-top:5px;border-top:3px solid #55A845;border-bottom:2px solid #55A845;padding:4px 0;">PROGRESS REPORT SHEET</div>
       </td>
       <td style="border:none;width:84px;text-align:center;vertical-align:middle;">${passportHTML}</td>

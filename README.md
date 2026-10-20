@@ -15,6 +15,28 @@ Open http://localhost:3000
 
 ---
 
+## Two schools, two portals
+
+The system now serves two schools from one database. Which school a student belongs to is decided by their **class**:
+
+| School | Classes | Portal URL |
+|--------|---------|-----------|
+| Criterion Amazing Nursery and Primary School | Creche 1, Creche 2, Pre-Nursery, Nursery 1–2, Primary 1–5 | `/primary` |
+| Criterion Amazing College Osogbo | J.S.S 1–3, S.S 1–3 | `/college` |
+
+- The home page (`/`) shows both schools as cards. Click one, sign in, and you land on that school's Results (class list, result entry, preview). Only that school's students and classes appear.
+- Teachers and admin can sign in at a school portal. Bursar accounts and the full admin menu use **Admin / Bursar login** (`/admin`), which is unchanged and sees both schools.
+- The server enforces this: a token issued through a school portal can only read or save that school's students and results.
+- Report cards, creche report cards, class lists, receipts and admission letters automatically carry the right school name, logo and motto for the student's class. A Primary 5 pupil promoted to J.S.S 1 moves to the College portal automatically.
+- Teacher accounts are shared: the same teacher login works at either school portal.
+- School names, logos and mottos live in `public/schools.js`.
+
+## Releasing updates to phones
+
+`public/sw.js` is network-first. After deploying, change `CACHE_NAME` (e.g. `criterion-v2` → `criterion-v3`) so phones that already have the app open drop the old cache and reload automatically — nobody needs to clear browser data.
+
+---
+
 ## Deploy to Render (Recommended — Free Tier)
 
 1. Push this folder to a GitHub repo
@@ -100,6 +122,7 @@ criterion-college/
     ├── app.js         ← Main app logic
     ├── api.js         ← API client (replaces localStorage)
     ├── data.js        ← Constants (classes, subjects, grades)
+    ├── schools.js     ← The two schools: names, logos, mottos, class→school rule
     ├── print.js       ← Standard result print template
     ├── creche_print.js← Creche result print template
     ├── logo.js        ← School logo (base64)

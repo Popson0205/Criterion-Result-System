@@ -32,6 +32,8 @@
 </div>
 
 <script src="logo.js"></script>
+<script src="data.js"></script>
+<script src="schools.js"></script>
 <script>
   function numToWords(n) {
     const a = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',
@@ -88,8 +90,9 @@
     const statusClr  = payColor(balance);
 
     // School logo
-    const logoHTML = (typeof SCHOOL_LOGO !== 'undefined' && SCHOOL_LOGO)
-      ? `<img src="${SCHOOL_LOGO}" style="width:70px;height:70px;object-fit:contain;border-radius:50%;border:2px solid #1a6e3c;">`
+    const school = schoolOfClass(r.classId);
+    const logoHTML = school.logo
+      ? `<img src="${school.logo}" style="width:70px;height:70px;object-fit:contain;">`
       : `<div style="width:70px;height:70px;background:linear-gradient(135deg,#1a6e3c,#55A845);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:24px;">CC</div>`;
 
     // Student passport
@@ -108,7 +111,7 @@
         <div style="width:80px;flex-shrink:0;"></div>
         <div style="flex:1;text-align:center;">
           <div style="display:inline-block;">${logoHTML}</div>
-          <div style="font-size:18px;font-weight:900;color:#1a6e3c;letter-spacing:0.5px;margin-top:6px;text-transform:uppercase;">CRITERION AMAZING COLLEGE, OSOGBO</div>
+          <div style="font-size:${school.headerLines.length > 1 ? 15 : 18}px;font-weight:900;color:#1a6e3c;letter-spacing:0.5px;margin-top:6px;text-transform:uppercase;line-height:1.15;">${school.headerLines.join('<br/>')}</div>
           <div style="background:#222;color:#fff;font-weight:700;font-size:12px;padding:2px 14px;border-radius:4px;display:inline-block;margin-top:4px;">08063224872</div>
         </div>
         <div style="width:80px;flex-shrink:0;text-align:center;">
@@ -197,7 +200,7 @@
       </div>`;
 
     // Set page title with student name for reference
-    document.title = `Receipt ${r.receipt_number} — ${r.studentName||''} | Criterion Amazing College`;
+    document.title = `Receipt ${r.receipt_number} — ${r.studentName||''} | ${school.name}`;
   }
 
   load();
