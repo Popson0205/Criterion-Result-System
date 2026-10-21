@@ -223,7 +223,7 @@ function buildResultHTML(student, result, position, totalStudents, forPrint=true
         <span class="green" style="font-size:${nameFontPx}px;">Student's Name:&nbsp;</span><span class="red">${student.name.toUpperCase()}</span>
       </td>
       <td style="border:none;padding:3px 0;text-align:right;">
-        <span class="green">Class:&nbsp;</span><span class="dark">${student.classId}</span>
+        <span class="green">Class:&nbsp;</span><span class="dark">${student.classId}</span>${student.admissionNo ? `&nbsp;&nbsp;<span class="green">Adm. No:&nbsp;</span><span class="dark">${student.admissionNo}</span>` : ''}
       </td>
     </tr>
     <tr>

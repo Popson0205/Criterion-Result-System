@@ -452,6 +452,89 @@ app.post('/api/migrate', requireAdmin, async (req, res) => {
 // ── HEALTH CHECK ──────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
+// ── EXCEL SCORE SHEETS ────────────────────────────────────────
+// Teachers download a class sheet (Admission No + CA/Exam columns per subject),
+// fill it in, and upload it. Students are matched by Admission No only.
+// Both routes respect the school portal the user signed in through.
+const ScoreSheets = require('./scoreSheets');
+const SCHOOL_NAMES = {
+  primary: 'Criterion Amazing Nursery and Primary School',
+  college: 'Criterion Amazing College Osogbo',
+};
+const httpErr = (status, message) => Object.assign(new Error(message), { status });
+
+async function sheetContext(user, classId, session, term) {
+  if (!classId) throw httpErr(400, 'Please choose a class first.');
+  if (!inScope(user, classId)) throw httpErr(403, "That class belongs to the other school's portal.");
+  const subjectsMap = await ClassSubjects.getAll(session, term);
+  if (!Object.prototype.hasOwnProperty.call(subjectsMap, classId)) throw httpErr(404, `Unknown class: ${classId}`);
+  const subjects = ScoreSheets.subjectsForClass(classId, subjectsMap[classId]);
+  const roster = (await Students.list()).filter(s => s.classId === classId && (s.status || 'active') !== 'graduated');
+  return { subjects, roster };
+}
+async function resultsFor(session, term) {
+  return (await Results.list()).filter(r => r.session === session && r.term === term);
+}
+
+app.get('/api/scores/template', requireAuth, async (req, res) => {
+  try {
+    const classId = req.query.classId;
+    const { session, term } = await resolveTermParams(req);
+    const { subjects, roster } = await sheetContext(req.user, classId, session, term);
+    if (!roster.length) throw httpErr(404, `There are no students in ${classId} yet.`);
+    if (!subjects.length) throw httpErr(400, `${classId} has no subjects yet. Add them under Subjects first.`);
+    const buf = await ScoreSheets.buildTemplate({
+      schoolName: SCHOOL_NAMES[schoolKeyOfClass(classId)],
+      classId, session, term, students: roster, subjects,
+      results: await resultsFor(session, term),
+    });
+    const safe = s => String(s).replace(/[^A-Za-z0-9.]+/g, '-').replace(/^-|-$/g, '');
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="Scores_${safe(classId)}_${safe(session)}_${safe(term)}.xlsx"`,
+      'Cache-Control': 'no-store',
+    });
+    res.send(buf);
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
+// dryRun:true  → check the file and report what WOULD change (nothing is saved)
+// dryRun:false → same checks, then save every valid row
+app.post('/api/scores/import', requireAuth, async (req, res) => {
+  try {
+    const { classId, file, dryRun } = req.body || {};
+    if (!file || typeof file !== 'string') throw httpErr(400, 'No file received.');
+    if (file.length > 12 * 1024 * 1024) throw httpErr(413, 'That file is too large for a score sheet.');
+    const buffer = Buffer.from(file.replace(/^data:.*?;base64,/, ''), 'base64');
+
+    let parsed;
+    try { parsed = await ScoreSheets.parseWorkbook(buffer); }
+    catch (e) { throw httpErr(400, e.message); }
+    const { meta, rows } = parsed;
+
+    if (classId && meta.classId !== classId)
+      throw httpErr(400, `This sheet is for ${meta.classId}, but you are importing into ${classId}. Choose ${meta.classId} on the Results page, or download the ${classId} sheet.`);
+    if (!meta.session || !ScoreSheets.TERMS.includes(meta.term))
+      throw httpErr(400, 'This score sheet has an invalid session or term. Please download a fresh one.');
+    if (rows.length > 600) throw httpErr(400, 'This sheet has too many rows for one class.');
+
+    const { subjects, roster } = await sheetContext(req.user, meta.classId, meta.session, meta.term);
+    const existing = new Map((await resultsFor(meta.session, meta.term)).map(r => [r.studentId, r]));
+    const { updates, report } = ScoreSheets.planImport({ meta, rows, students: roster, subjects, existing });
+
+    const settings = await Settings.get();
+    if (settings.session !== meta.session || settings.term !== meta.term) {
+      report.warnings.unshift(`This sheet is for ${meta.term} ${meta.session}, but the portal is currently set to ${settings.term} ${settings.session}.`);
+    }
+
+    if (!dryRun) {
+      for (const u of updates) await Results.save(u.result);
+      report.applied = updates.length;
+    }
+    res.json({ ok: true, dryRun: !!dryRun, report });
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
+
 // ── SPA fallback ──────────────────────────────────────────────
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -459,6 +542,7 @@ app.get('*', (req, res) => {
 
 // ── Boot: init schema then start ─────────────────────────────
 initSchema()
+  .then(() => Students.assignMissing().then(n => { if (n) console.log(`🔢 Assigned admission numbers to ${n} existing student(s)`); }))
   .then(() => {
     
 // ============================================================

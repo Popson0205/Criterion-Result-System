@@ -38,6 +38,23 @@ const API = {
     return data;
   },
 
+  // Downloads a file (e.g. the Excel score sheet) with the login token attached.
+  async download(path, fallbackName) {
+    const res = await fetch(path, { headers: { 'Authorization': 'Bearer ' + this.getToken() } });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || ('Download failed (' + res.status + ')'));
+    }
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^";]+)"?/);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = m ? m[1] : (fallbackName || 'download');
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  },
+
   get(path)         { return this.request('GET', path); },
   post(path, body)  { return this.request('POST', path, body); },
   put(path, body)   { return this.request('PUT', path, body); },
@@ -97,6 +114,9 @@ const DB = {
       const idx = this._students.findIndex(s => s.id === student.id);
       if (idx >= 0) this._students[idx] = student;
       else this._students.push(student);
+      // The server assigns the admission number — pull the saved record back
+      // so it shows straight away (and so we never keep a stale copy).
+      try { this._students = await API.get('/api/students'); } catch (_) {}
     }
   },
   async deleteStudent(id) {

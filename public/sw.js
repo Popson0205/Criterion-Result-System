@@ -5,7 +5,7 @@
 // then drop the old cache and reload themselves — nobody has to clear
 // their browser data.
 // ============================================================
-const CACHE_NAME = 'criterion-v2';
+const CACHE_NAME = 'criterion-v3';
 
 const PRECACHE_URLS = [
   '/', '/index.html', '/styles.css', '/theme.js', '/logo.js', '/schools.js',

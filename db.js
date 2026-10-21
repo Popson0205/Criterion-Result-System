@@ -283,6 +283,11 @@ async function initSchema() {
     ALTER TABLE settings ADD COLUMN IF NOT EXISTS "bursarSignature" TEXT DEFAULT '';
   `);
 
+  // Auto-migration: permanent admission number (e.g. CAN/26/0001, CAC/26/0001).
+  // Existing students are numbered automatically at start-up (Students.assignMissing).
+  await pool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS "admissionNo" TEXT;`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_students_admission_no ON students("admissionNo") WHERE "admissionNo" IS NOT NULL;`);
+
   // Auto-migration: add student promotion status (active / repeat / graduated).
   // Existing rows default to 'active' so nobody is silently marked otherwise.
   await pool.query(`
@@ -525,7 +530,66 @@ async function sessionIsHistorical(session, client = pool) {
   return rows.length > 0;
 }
 
+// ── Admission numbers ─────────────────────────────────────────
+// Format: <PREFIX>/<YY>/<NNNN>   e.g. CAN/26/0001 (Nursery & Primary), CAC/26/0001 (College).
+//   • PREFIX is decided by the class the student is admitted into.
+//   • YY is the start year of the current session (2026/2027 → 26).
+//   • NNNN counts up per prefix + year. The number is permanent: it never
+//     changes when the student is promoted (even across schools).
+const ADMISSION_LOCK = 41001; // serialises number generation so two admins can't get the same number
+function admissionPrefix(classId) {
+  return /^(J\.S\.S|S\.S)/i.test(String(classId || '').trim()) ? 'CAC' : 'CAN';
+}
+function admissionYear2(session) {
+  const m = String(session || '').match(/(\d{4})/);
+  return String(m ? parseInt(m[1], 10) : new Date().getFullYear()).slice(-2);
+}
+// Caller must already hold ADMISSION_LOCK (inside a transaction).
+async function nextAdmissionNo(client, classId, session) {
+  const prefix = `${admissionPrefix(classId)}/${admissionYear2(session)}/`;
+  const { rows } = await client.query(
+    `SELECT MAX(CAST(SUBSTRING("admissionNo" FROM '[0-9]+$') AS INTEGER)) AS n
+       FROM students WHERE "admissionNo" LIKE $1`, [prefix + '%']
+  );
+  return prefix + String((rows[0] && rows[0].n || 0) + 1).padStart(4, '0');
+}
+// Gives one student a number if they don't have one yet (inside a transaction).
+async function assignAdmissionNo(client, studentId) {
+  await client.query('SELECT pg_advisory_xact_lock($1)', [ADMISSION_LOCK]);
+  const { rows } = await client.query('SELECT "classId","admissionNo" FROM students WHERE id=$1', [studentId]);
+  if (!rows[0]) return null;
+  if (rows[0].admissionNo) return rows[0].admissionNo;
+  const no = await nextAdmissionNo(client, rows[0].classId, await getCurrentSession(client));
+  await client.query('UPDATE students SET "admissionNo"=$1 WHERE id=$2', [no, studentId]);
+  return no;
+}
+
 const Students = {
+  // Numbers every student that doesn't have one yet (oldest first). Safe to run
+  // repeatedly — runs at every start-up so existing students are covered after
+  // an update, and anything created by other routes is picked up too.
+  assignMissing: async () => {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock($1)', [ADMISSION_LOCK]);
+      const { rows } = await client.query(
+        'SELECT id, "classId" FROM students WHERE "admissionNo" IS NULL ORDER BY "createdAt", name, id'
+      );
+      const session = await getCurrentSession(client);
+      for (const r of rows) {
+        const no = await nextAdmissionNo(client, r.classId, session);
+        await client.query('UPDATE students SET "admissionNo"=$1 WHERE id=$2', [no, r.id]);
+      }
+      await client.query('COMMIT');
+      return rows.length;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  },
   // Session-aware: if the current Settings session has already been closed
   // out by a promotion (i.e. it has snapshot rows in student_class_history),
   // return everyone's classId/status AS OF that session instead of live data.
@@ -534,7 +598,7 @@ const Students = {
     const currentSession = await getCurrentSession();
     if (await sessionIsHistorical(currentSession)) {
       const { rows } = await pool.query(`
-        SELECT s.id, s.name, s."daysAttended", s.passport, s."createdAt",
+        SELECT s.id, s.name, s."daysAttended", s.passport, s."createdAt", s."admissionNo",
                h."classId" AS "classId", h.status AS status
         FROM students s
         JOIN student_class_history h ON h."studentId" = s.id AND h.session = $1
@@ -576,7 +640,7 @@ const Students = {
     try {
       await client.query('BEGIN');
 
-      const { rows: existingRows } = await client.query('SELECT "classId", status FROM students WHERE id=$1', [id]);
+      const { rows: existingRows } = await client.query('SELECT "classId", status, "admissionNo" FROM students WHERE id=$1', [id]);
       const prev = existingRows[0] || null;
 
       await client.query(`
@@ -585,6 +649,16 @@ const Students = {
         ON CONFLICT (id) DO UPDATE
           SET name=$2, "classId"=$3, "daysAttended"=$4, passport=$5, status=$6
       `, [id, student.name, student.classId, student.daysAttended || '', student.passport || '', status]);
+
+      // Admission number: an admin may correct it by hand (must stay unique);
+      // otherwise a new student gets the next automatic number.
+      const wantedNo = String(student.admissionNo || '').trim().toUpperCase();
+      if (wantedNo && wantedNo !== ((prev && prev.admissionNo) || '')) {
+        const { rows: clash } = await client.query('SELECT name FROM students WHERE "admissionNo"=$1 AND id<>$2', [wantedNo, id]);
+        if (clash[0]) throw httpError(409, `Admission number ${wantedNo} already belongs to ${clash[0].name}.`);
+        await client.query('UPDATE students SET "admissionNo"=$1 WHERE id=$2', [wantedNo, id]);
+      }
+      await assignAdmissionNo(client, id);
 
       if (prev) {
         const currentSession = await getCurrentSession(client);
@@ -644,6 +718,7 @@ const Students = {
           SET name=$2, "classId"=$3, "daysAttended"=$4, passport=$5, status=$6
       `, [s.id || 'stu_' + uid(), s.name, s.classId, s.daysAttended || '', s.passport || '', status]);
     }
+    await Students.assignMissing();
   },
 
   // ── Promotion (admin-triggered, at the start of a new session) ─────────
@@ -1114,7 +1189,15 @@ const Applicants = {
       VALUES ($1,$2,$3,$4,$5)
       ON CONFLICT (id) DO NOTHING
     `, [studentId, fullName, app.class_admitted, '', app.passport || '']);
-    return { studentId, name: fullName, classId: app.class_admitted };
+    let admissionNo = null;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      admissionNo = await assignAdmissionNo(client, studentId);
+      await client.query('COMMIT');
+    } catch (e) { await client.query('ROLLBACK'); throw e; }
+    finally { client.release(); }
+    return { studentId, name: fullName, classId: app.class_admitted, admissionNo };
   },
 
   async delete(id) {

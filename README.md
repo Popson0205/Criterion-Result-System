@@ -31,9 +31,42 @@ The system now serves two schools from one database. Which school a student belo
 - Teacher accounts are shared: the same teacher login works at either school portal.
 - School names, logos and mottos live in `public/schools.js`.
 
+## Admission numbers
+
+Every student has a permanent **Admission No** that is generated automatically:
+
+| School | Format | Example |
+|--------|--------|---------|
+| Nursery & Primary | `CAN/<year>/<number>` | `CAN/26/0001` |
+| College | `CAC/<year>/<number>` | `CAC/26/0001` |
+
+- The prefix comes from the class the student is first admitted into; the year is the start of the current session (2026/2027 → 26); the number counts up per prefix and year.
+- **Existing students are numbered automatically the first time the new version starts** (oldest record first). It is safe to restart: students that already have a number are never changed.
+- New students, admitted applicants and bulk imports get the next number when they are saved.
+- The number never changes when a student is promoted, even from Primary 5 into J.S.S 1.
+- Admin can correct a number on the Edit Student page; the system refuses duplicates.
+- It shows on the Students list, Results list, result-entry screens, class lists and report cards.
+
+## Excel score sheets (teachers)
+
+On the **Results** page, choose a class, then:
+
+1. **⬇ Excel Score Sheet** downloads a sheet for that class, term and session: Admission No, student name, and a CA (/40) and Exam (/60) column for every subject. Scores already saved are pre-filled.
+2. The teacher fills in the white cells and saves the file.
+3. **⬆ Import Scores** uploads it. A **preview** shows how many students will be updated and lists any problem rows. Nothing is saved until the teacher confirms.
+
+Rules:
+- Students are matched **only by Admission No**, so sorting the sheet or misspelling a name cannot put a score on the wrong child.
+- An empty cell keeps the score already saved. Comments and subjects not on the sheet are left alone.
+- A row with a mistake (score above 40/60, not a number, unknown or duplicate Admission No) is skipped and reported; the other rows still import.
+- A sheet only works for the class, session and term it was made for, and a school portal can only use its own school's classes.
+- Creche 1 and 2 sheets use their skills list (plus any subject added under Subjects).
+
+---
+
 ## Releasing updates to phones
 
-`public/sw.js` is network-first. After deploying, change `CACHE_NAME` (e.g. `criterion-v2` → `criterion-v3`) so phones that already have the app open drop the old cache and reload automatically — nobody needs to clear browser data.
+`public/sw.js` is network-first. After deploying, change `CACHE_NAME` (e.g. `criterion-v3` → `criterion-v4`) so phones that already have the app open drop the old cache and reload automatically — nobody needs to clear browser data.
 
 ---
 
@@ -111,6 +144,7 @@ copy in `public/data.js` is only an offline fallback.
 ```
 criterion-college/
 ├── server.js          ← Express API server
+├── scoreSheets.js     ← Excel score-sheet template, validation and import planning
 ├── db.js              ← SQLite database layer
 ├── package.json
 ├── render.yaml        ← Render deployment config

@@ -538,6 +538,7 @@ function renderStudents() {
         <tr>
           <th>Passport</th>
           <th>Name</th>
+          <th>Adm. No</th>
           <th>Class</th>
           <th>Status</th>
           <th>Session</th>
@@ -545,7 +546,7 @@ function renderStudents() {
         </tr>
       </thead>
       <tbody>
-        ${filtered.length === 0 ? `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);">No students yet. <a href="#" onclick="navigate('add_student');editStudentId=null;">Add one →</a></td></tr>` :
+        ${filtered.length === 0 ? `<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted);">No students yet. <a href="#" onclick="navigate('add_student');editStudentId=null;">Add one →</a></td></tr>` :
           filtered.map(s => {
             const result = DB.getResult(s.id, settings.session, settings.term);
             return `
@@ -556,6 +557,7 @@ function renderStudents() {
                   : `<div style="width:36px;height:40px;background:#e8f5e9;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:16px;">👤</div>`}
               </td>
               <td style="font-weight:600;">${s.name}</td>
+              <td style="font-size:12px;white-space:nowrap;">${s.admissionNo ? escapeHtml(s.admissionNo) : '—'}</td>
               <td><span class="badge">${s.classId}</span></td>
               <td>${studentStatusBadge(s.status)}</td>
               <td style="color:var(--text-muted);font-size:12px;">${settings.session}</td>
@@ -643,6 +645,7 @@ function downloadClassList(classId) {
         <td style="text-align:center;padding:7px 10px;font-weight:700;color:#1a6e3c;font-size:13px;">${i + 1}</td>
         <td style="text-align:center;padding:7px 10px;">${passportCell}</td>
         <td style="padding:7px 14px;font-weight:600;font-size:13px;color:#111;">${s.name}</td>
+        <td style="padding:7px 14px;font-size:12px;color:#333;white-space:nowrap;">${s.admissionNo || '—'}</td>
         <td style="padding:7px 14px;font-size:12px;color:#555;">${s.classId}</td>
         <td style="padding:7px 14px;font-size:12px;color:#555;">${settings.session || '—'}</td>
         <td style="padding:7px 14px;font-size:12px;color:#555;">${settings.term || '—'}</td>
@@ -823,6 +826,7 @@ function downloadClassList(classId) {
         <th>#</th>
         <th>Photo</th>
         <th>Student Name</th>
+        <th>Adm. No</th>
         <th>Class</th>
         <th>Session</th>
         <th>Term</th>
@@ -895,6 +899,14 @@ function renderAddStudent(studentId=null) {
         <input id="s-days" type="number" class="input" value="${student?.daysAttended||''}" placeholder="e.g. 60" />
       </div>
       <div class="form-group" style="grid-column:1/-1;">
+        <label>Admission No</label>
+        ${student
+          ? `<input id="s-admno" type="text" class="input" value="${escapeHtml(student.admissionNo||'')}" placeholder="CAN/26/0001" />
+             <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Permanent ID used to match this student in Excel score sheets. It stays the same when the student is promoted. Only change it to correct a mistake — it must be unique.</div>`
+          : `<input type="text" class="input" value="" placeholder="Assigned automatically when you save" disabled />
+             <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">CAN/… for Nursery &amp; Primary, CAC/… for College, followed by the year and a running number.</div>`}
+      </div>
+      <div class="form-group" style="grid-column:1/-1;">
         <label>Promotion Status</label>
         <select id="s-status" class="input">
           <option value="active" ${(!student || student.status==='active' || !student.status)?'selected':''}>Active — will be promoted normally at the next session</option>
@@ -947,9 +959,11 @@ async function saveStudent(id) {
   if (!cls)  { alert('Please select a class.'); return; }
   const existing = id ? DB.getStudent(id) : null;
   const passport = window._passportData || existing?.passport || null;
+  const admNoField = document.getElementById('s-admno'); // only present when editing
   const student = {
     id: id || uid(),
     name, classId: cls, daysAttended: days, passport, status,
+    admissionNo: admNoField ? admNoField.value.trim().toUpperCase() : (existing?.admissionNo || ''),
     createdAt: existing?.createdAt || Date.now(),
   };
   try {
@@ -1248,6 +1262,11 @@ function renderResults() {
       <option value="">All Classes</option>
       ${visibleClasses().map(c=>`<option value="${c}" ${filterClass===c?'selected':''}>${c}</option>`).join('')}
     </select>
+    ${filterClass ? `
+      <button class="btn btn-secondary btn-sm" onclick="downloadScoreSheet('${filterClass.replace(/'/g,"\\'")}')" title="Excel sheet with every student's Admission No and a column for each subject">⬇ Excel Score Sheet</button>
+      <button class="btn btn-primary btn-sm" ${settings.isHistoricalSession ? 'disabled title="Read-only while viewing an archived session"' : ''} onclick="openScoreImport('${filterClass.replace(/'/g,"\\'")}')">⬆ Import Scores</button>
+      <input id="score-file" type="file" accept=".xlsx" style="display:none;" onchange="handleScoreFile(this)" />`
+      : `<span style="font-size:12px;color:var(--text-muted);">Choose a class to download or import its Excel score sheet.</span>`}
   </div>
   <div class="card" style="padding:0;overflow:hidden;">
     <table class="data-table">
@@ -1274,7 +1293,7 @@ function renderResults() {
             gradeDistHTML = Object.entries(computed.gradeCounts).filter(([,n])=>n>0).map(([g,n])=>`<span style="margin-right:4px;font-weight:600;">${g}:${n}</span>`).join('');
           }
           return `<tr>
-            <td style="font-weight:600;">${s.name}</td>
+            <td style="font-weight:600;">${s.name}${s.admissionNo ? `<div style="font-size:11px;font-weight:500;color:var(--text-muted);">${escapeHtml(s.admissionNo)}</div>` : ''}</td>
             <td><span class="badge">${s.classId}</span></td>
             <td style="font-weight:700;color:#1a6e3c;">${avgDisplay !== null ? avgDisplay : '—'}</td>
             <td style="font-weight:700;">${rk && r ? getOrdinal(rk.rank) : '—'}</td>
@@ -1294,6 +1313,102 @@ function renderResults() {
       </tbody>
     </table>
   </div>`;
+}
+
+// ── EXCEL SCORE SHEETS ───────────────────────────────────────
+// Download a class sheet → teacher fills in CA/Exam → upload → preview → import.
+// Students are matched by Admission No on the server; nothing is saved until
+// the teacher confirms the preview.
+let _scoreImport = null; // { classId, file }
+
+function flashToast(msg, isError) {
+  const t = document.createElement('div');
+  t.style.cssText = `position:fixed;bottom:24px;right:24px;background:${isError ? '#b91c1c' : '#1a6e3c'};color:white;padding:12px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:10001;box-shadow:0 4px 20px rgba(0,0,0,0.2);max-width:360px;`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3500);
+}
+
+async function downloadScoreSheet(classId) {
+  const st = DB.getSettings();
+  const qs = `classId=${encodeURIComponent(classId)}&session=${encodeURIComponent(st.session)}&term=${encodeURIComponent(st.term)}`;
+  try {
+    await API.download('/api/scores/template?' + qs, 'scores.xlsx');
+    flashToast('📥 Score sheet downloaded');
+  } catch (e) { alert(e.message || 'Could not download the score sheet.'); }
+}
+
+function openScoreImport(classId) {
+  _scoreImport = { classId, file: null };
+  const input = document.getElementById('score-file');
+  if (input) { input.value = ''; input.click(); }
+}
+
+function handleScoreFile(input) {
+  const f = input.files && input.files[0];
+  if (!f || !_scoreImport) return;
+  if (!/\.xlsx$/i.test(f.name)) { alert('Please choose the Excel (.xlsx) score sheet you downloaded from the portal.'); input.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    _scoreImport.file = String(reader.result).split(',')[1] || '';
+    input.value = '';
+    flashToast('Checking the sheet…');
+    try {
+      const out = await API.post('/api/scores/import', { classId: _scoreImport.classId, file: _scoreImport.file, dryRun: true });
+      showScoreImportReport(out.report);
+    } catch (e) { alert(e.message || 'Could not read that file.'); }
+  };
+  reader.readAsDataURL(f);
+}
+
+function closeScoreImportModal() { const m = document.getElementById('score-import-modal'); if (m) m.remove(); }
+
+function showScoreImportReport(rep) {
+  closeScoreImportModal();
+  const t = rep.totals;
+  const box = (n, label, color) => `<div style="flex:1;min-width:90px;text-align:center;padding:10px 6px;border-radius:8px;background:${color}15;border:1px solid ${color}40;">
+      <div style="font-size:22px;font-weight:800;color:${color};">${n}</div><div style="font-size:11px;color:#555;">${label}</div></div>`;
+  const errRows = rep.errors.slice(0, 100).map(e => `<tr><td style="padding:4px 8px;white-space:nowrap;">Row ${e.row}</td><td style="padding:4px 8px;white-space:nowrap;">${escapeHtml(e.admissionNo || '—')}</td><td style="padding:4px 8px;">${escapeHtml(e.message)}</td></tr>`).join('');
+  const prevRows = rep.previews.slice(0, 8).map(p => `<div style="font-size:12px;padding:2px 0;">${escapeHtml(p.name)} <span style="color:var(--text-muted);">· ${escapeHtml(p.admissionNo || '')} · ${p.changes} score${p.changes===1?'':'s'} ${p.isNew ? '(new result)' : 'changed'}</span></div>`).join('');
+  const html = `
+  <div id="score-import-modal" style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px;">
+    <div class="card" style="width:640px;max-width:100%;max-height:90vh;overflow:auto;padding:24px;">
+      <h3 style="margin:0 0 4px;color:#1a6e3c;">Import preview</h3>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px;"><strong>${escapeHtml(rep.classId)}</strong> · ${escapeHtml(rep.session)} · ${escapeHtml(rep.term)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        ${box(t.willUpdate, 'will be updated', '#1a6e3c')}
+        ${box(t.unchanged, 'no change', '#6b7280')}
+        ${box(t.skipped, 'skipped (errors)', t.skipped ? '#b91c1c' : '#6b7280')}
+      </div>
+      ${rep.warnings.map(w => `<div style="font-size:12.5px;background:#fff7ed;border-left:4px solid #c2410c;padding:8px 12px;margin-bottom:8px;color:#7c2d12;">⚠️ ${escapeHtml(w)}</div>`).join('')}
+      ${t.willUpdate ? `<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:700;color:#1a6e3c;margin-bottom:4px;">Will be saved${rep.previews.length > 8 ? ` (first 8 of ${rep.previews.length})` : ''}</div>${prevRows}</div>` : ''}
+      ${t.skipped ? `<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:700;color:#b91c1c;margin-bottom:4px;">These rows will NOT be imported — fix them in Excel and upload again${rep.errors.length > 100 ? ` (first 100 of ${rep.errors.length})` : ''}</div>
+        <div style="max-height:170px;overflow:auto;border:1px solid #fecaca;border-radius:6px;"><table style="width:100%;font-size:12px;border-collapse:collapse;">${errRows}</table></div></div>` : ''}
+      ${rep.notInSheet.length ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">${rep.notInSheet.length} student(s) in this class were not in the sheet or had no scores and are left untouched.</div>` : ''}
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-ghost" onclick="closeScoreImportModal()">${t.willUpdate ? 'Cancel' : 'Close'}</button>
+        ${t.willUpdate ? `<button id="score-import-go" class="btn btn-primary" onclick="confirmScoreImport()">Import ${t.willUpdate} student${t.willUpdate===1?'':'s'}</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function confirmScoreImport() {
+  if (!_scoreImport || !_scoreImport.file) return;
+  const btn = document.getElementById('score-import-go');
+  if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
+  try {
+    const out = await API.post('/api/scores/import', { classId: _scoreImport.classId, file: _scoreImport.file, dryRun: false });
+    DB._results = await API.get('/api/results'); // refresh so the list shows the new averages
+    closeScoreImportModal();
+    _scoreImport = null;
+    render();
+    flashToast(`✅ ${out.report.applied} result${out.report.applied===1?'':'s'} imported`);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Try again'; }
+    alert(e.message || 'Import failed.');
+  }
 }
 
 // ── ENTER RESULT ─────────────────────────────────────────────
@@ -1344,7 +1459,8 @@ function renderEnterResult() {
     <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
       ${student.passport ? `<img src="${student.passport}" style="width:56px;height:64px;object-fit:cover;border-radius:6px;border:2px solid #55A845;" />` : `<div style="width:56px;height:64px;background:#e8f5e9;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:28px;">👤</div>`}
       <div style="flex:1;min-width:200px;">
-        <div style="font-size:18px;font-weight:700;margin-bottom:8px;">${student.name} &nbsp;<span style="font-size:13px;font-weight:500;color:var(--text-muted);">${student.classId}</span></div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:${student.admissionNo ? '2px' : '8px'};">${student.name} &nbsp;<span style="font-size:13px;font-weight:500;color:var(--text-muted);">${student.classId}</span></div>
+        ${student.admissionNo ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Adm. No: <strong>${escapeHtml(student.admissionNo)}</strong></div>` : ''}
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <div class="form-group">
             <label>Session</label>
@@ -2721,7 +2837,8 @@ function renderCrecheEntryForm(student, existing, entrySession, entryTerm) {
         ? `<img src="${student.passport}" style="width:56px;height:64px;object-fit:cover;border-radius:6px;border:2px solid #00B050;" />`
         : `<div style="width:56px;height:64px;background:#e8f5e9;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:28px;">👤</div>`}
       <div style="flex:1;min-width:200px;">
-        <div style="font-size:18px;font-weight:700;margin-bottom:8px;">${student.name} &nbsp;<span style="font-size:13px;font-weight:500;color:var(--text-muted);">${student.classId}</span></div>
+        <div style="font-size:18px;font-weight:700;margin-bottom:${student.admissionNo ? '2px' : '8px'};">${student.name} &nbsp;<span style="font-size:13px;font-weight:500;color:var(--text-muted);">${student.classId}</span></div>
+        ${student.admissionNo ? `<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Adm. No: <strong>${escapeHtml(student.admissionNo)}</strong></div>` : ''}
         <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <div class="form-group">
             <label>Session</label>

@@ -278,7 +278,7 @@ function buildCrecheResultHTML(student, result, position, totalStudents) {
         <span class="green" style="font-size:16px;">Student's/Pupil's Name:&nbsp;</span><span class="red" style="font-size:16px;">${student.name.toUpperCase()}</span>
       </td>
       <td style="border:none;padding:3px 0;text-align:right;">
-        <span class="green" style="font-size:16px;">Class:&nbsp;</span><span class="dark" style="font-size:16px;">${student.classId}</span>
+        <span class="green" style="font-size:16px;">Class:&nbsp;</span><span class="dark" style="font-size:16px;">${student.classId}</span>${student.admissionNo ? `&nbsp;&nbsp;<span class="green" style="font-size:16px;">Adm. No:&nbsp;</span><span class="dark" style="font-size:16px;">${student.admissionNo}</span>` : ''}
       </td>
     </tr>
     <tr>
